@@ -6,15 +6,22 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "sync": "curl -X POST http://localhost:3000/api/sync"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1129.0",
+    "@gsap/react": "^2.1.2",
+    "canvas-confetti": "^1.9.4",
+    "gsap": "^3.15.0",
+    "mongodb": "^7.6.0",
     "next": "16.3.3",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/canvas-confetti": "^1.9.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
