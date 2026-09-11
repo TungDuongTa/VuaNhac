@@ -259,7 +259,7 @@ export function SongGame() {
       searchAbortRef.current = controller;
       try {
         const res = await fetch(
-          `/api/search?q=${encodeURIComponent(query)}&difficulty=${difficulty}`,
+          `/api/search?q=${encodeURIComponent(query)}`,
           { signal: controller.signal },
         );
         if (!res.ok) return;
@@ -272,7 +272,7 @@ export function SongGame() {
     }, 200);
 
     return () => clearTimeout(handle);
-  }, [query, difficulty, status, revealDismissed]);
+  }, [query, status, revealDismissed]);
 
   useEffect(() => {
     const canInteract =
@@ -456,6 +456,11 @@ export function SongGame() {
   const dismissReveal = useCallback(() => {
     setRevealDismissed(true);
     pauseAudio();
+    const panel = panelRef.current;
+    if (panel) {
+      panel.classList.remove("is-shaking");
+      panel.style.removeProperty("--lost-wash-opacity");
+    }
   }, [pauseAudio]);
 
   const revealAnswer = async () => {
@@ -650,10 +655,13 @@ export function SongGame() {
           ref={panelRef}
           className="mode-panel relative mx-auto flex h-dvh w-full max-w-none flex-col items-center justify-center overflow-y-auto px-5 py-14 sm:px-6 lg:mt-0 lg:h-[calc(100vh-4rem)] lg:max-w-none lg:self-center lg:px-6 lg:py-10"
           data-status={
-            status === "lost" || status === "won" ? status : undefined
+            showingReveal && (status === "lost" || status === "won")
+              ? status
+              : undefined
           }
           style={{
-            backgroundColor: status === "lost" ? undefined : meta.panelBg,
+            backgroundColor:
+              showingReveal && status === "lost" ? undefined : meta.panelBg,
             borderColor: "rgba(255,255,255,0.12)",
           }}
           onClick={() => {
@@ -670,7 +678,7 @@ export function SongGame() {
           tabIndex={showingReveal ? 0 : undefined}
           aria-label={showingReveal ? "Dismiss reveal and show game controls" : undefined}
         >
-          {status === "won" && (
+          {showingReveal && status === "won" && (
             <>
               <div className="win-flash" aria-hidden />
               <canvas
