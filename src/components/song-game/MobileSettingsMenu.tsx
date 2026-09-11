@@ -1,16 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
-import { RerollIcon } from "./icons";
 import { SettingsPanel, type SettingsPanelProps } from "./SettingsPanel";
-import type { GameStatus } from "./types";
 
 type Props = SettingsPanelProps & {
   open: boolean;
-  status: GameStatus;
   onClose: () => void;
   onOpen: () => void;
-  onReroll: () => void;
 };
 
 function HamburgerIcon({ open }: { open: boolean }) {
@@ -31,10 +27,8 @@ function HamburgerIcon({ open }: { open: boolean }) {
 
 export function MobileSettingsMenu({
   open,
-  status,
   onClose,
   onOpen,
-  onReroll,
   ...settings
 }: Props) {
   useEffect(() => {
@@ -98,19 +92,6 @@ export function MobileSettingsMenu({
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-5">
-          <button
-            type="button"
-            onClick={() => {
-              onReroll();
-              onClose();
-            }}
-            disabled={status === "loading"}
-            className="mb-7 flex w-full items-center justify-center gap-1.5 rounded-full border border-white/15 bg-[#1c1c1c] py-2.5 text-sm font-semibold text-zinc-200 transition hover:border-white/30 hover:text-white disabled:opacity-40"
-          >
-            <RerollIcon />
-            Reroll
-          </button>
-
           <SettingsPanel {...settings} />
         </div>
       </div>

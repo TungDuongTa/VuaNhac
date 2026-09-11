@@ -18,6 +18,7 @@ import { DifficultyPills } from "./DifficultyPills";
 import { DifficultySidebar } from "./DifficultySidebar";
 import { GuessSearchBar } from "./GuessSearchBar";
 import { useRevealAnimations } from "./hooks/useRevealAnimations";
+import { RerollIcon } from "./icons";
 import { MobileSettingsMenu } from "./MobileSettingsMenu";
 import { PlayControls } from "./PlayControls";
 import { ProgressBar } from "./ProgressBar";
@@ -636,10 +637,8 @@ export function SongGame() {
 
       <MobileSettingsMenu
         open={menuOpen}
-        status={status}
         onOpen={() => setMenuOpen(true)}
         onClose={() => setMenuOpen(false)}
-        onReroll={() => void loadSong(difficulty, { reroll: true })}
         {...settingsProps}
       />
 
@@ -769,6 +768,21 @@ export function SongGame() {
                   void skip();
                 }}
               />
+            )}
+
+            {(showingBoard || status === "loading") && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void loadSong(difficulty, { reroll: true });
+                }}
+                disabled={status === "loading"}
+                className="mt-1 flex w-full max-w-xs items-center justify-center gap-1.5 rounded-full border border-white/15 bg-black/25 py-2.5 text-sm font-semibold text-zinc-200 transition hover:border-white/30 hover:text-white disabled:opacity-40 lg:hidden"
+              >
+                <RerollIcon />
+                Reroll
+              </button>
             )}
           </div>
         </section>

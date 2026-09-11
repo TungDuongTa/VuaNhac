@@ -52,6 +52,35 @@ body {
   border: none;
 }
 
+/* Thin dark scrollbars for overlays / dropdowns */
+.app-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+
+.app-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.app-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 8px 0;
+}
+
+.app-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+}
+
+.app-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.38);
+}
+
+.app-scrollbar::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 .mode-panel {
   position: relative;
   isolation: isolate;
