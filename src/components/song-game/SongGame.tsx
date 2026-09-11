@@ -369,6 +369,7 @@ export function SongGame() {
 
   useEffect(() => {
     if (status !== "won" && status !== "lost") return;
+    if (revealDismissed) return;
     if (!song || !answer) return;
 
     const plan = playbackPlan(song, songStart);
@@ -450,7 +451,12 @@ export function SongGame() {
       setPlaying(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, answer?.id, song?.id, songStart, startProgressTracking]);
+  }, [status, answer?.id, song?.id, songStart, revealDismissed, startProgressTracking]);
+
+  const dismissReveal = useCallback(() => {
+    setRevealDismissed(true);
+    pauseAudio();
+  }, [pauseAudio]);
 
   const revealAnswer = async () => {
     if (!song) return;
@@ -651,13 +657,13 @@ export function SongGame() {
             borderColor: "rgba(255,255,255,0.12)",
           }}
           onClick={() => {
-            if (showingReveal) setRevealDismissed(true);
+            if (showingReveal) dismissReveal();
           }}
           onKeyDown={(e) => {
             if (!showingReveal) return;
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault();
-              setRevealDismissed(true);
+              dismissReveal();
             }
           }}
           role={showingReveal ? "button" : undefined}

@@ -80,7 +80,8 @@ export default function AdminPage() {
     setError(null);
     try {
       const params = new URLSearchParams();
-      if (filterDifficulty !== "all") params.set("difficulty", filterDifficulty);
+      if (filterDifficulty !== "all")
+        params.set("difficulty", filterDifficulty);
       if (query.trim()) params.set("q", query.trim());
       const res = await fetch(`/api/admin/songs?${params}`, {
         headers: adminHeaders(secret, false),
@@ -125,7 +126,8 @@ export default function AdminPage() {
         body: JSON.stringify({ url: form.spotifyUrl || form.spotifyId }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || data.message || "Lookup failed");
+      if (!res.ok)
+        throw new Error(data.error || data.message || "Lookup failed");
       setForm((prev) => ({
         ...prev,
         spotifyUrl: data.spotifyUrl ?? prev.spotifyUrl,
@@ -180,9 +182,7 @@ export default function AdminPage() {
         artist: form.artist,
         album: form.album || null,
         previewUrl: form.previewUrl || null,
-        previewUpdatedAt: form.previewUrl
-          ? new Date().toISOString()
-          : null,
+        previewUpdatedAt: form.previewUrl ? new Date().toISOString() : null,
         imageUrl: form.imageUrl || null,
         difficulty: form.difficulty,
         hostedUrl,
@@ -296,7 +296,7 @@ export default function AdminPage() {
           <button
             type="button"
             onClick={saveSecret}
-            className="rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-black"
+            className="rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-black cursor-pointer"
           >
             Use secret
           </button>
@@ -331,7 +331,7 @@ export default function AdminPage() {
               type="button"
               disabled={busy}
               onClick={() => void lookupSpotify()}
-              className="rounded-full border border-[#1ed760]/40 bg-[#1ed760]/15 px-5 py-2.5 text-sm font-semibold text-[#1ed760] disabled:opacity-50"
+              className="rounded-full border border-[#1ed760]/40 bg-[#1ed760]/15 px-5 py-2.5 text-sm font-semibold text-[#1ed760] disabled:opacity-50 cursor-pointer"
             >
               Autofill from Spotify
             </button>
@@ -491,13 +491,18 @@ export default function AdminPage() {
                   </span>
                 )}
                 <div className="min-w-0">
-                  <p className="truncate font-medium text-white">{song.title}</p>
-                  <p className="truncate text-sm text-zinc-400">{song.artist}</p>
+                  <p className="truncate font-medium text-white">
+                    {song.title}
+                  </p>
+                  <p className="truncate text-sm text-zinc-400">
+                    {song.artist}
+                  </p>
                   <p className="mt-1 text-xs text-zinc-500">
                     <span
                       className="mr-2 inline-block rounded-full px-2 py-0.5 font-semibold"
                       style={{
-                        backgroundColor: DIFFICULTY_META[song.difficulty].idleBg,
+                        backgroundColor:
+                          DIFFICULTY_META[song.difficulty].idleBg,
                         color: DIFFICULTY_META[song.difficulty].color,
                       }}
                     >
