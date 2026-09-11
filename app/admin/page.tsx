@@ -56,6 +56,8 @@ function adminHeaders(secret: string, json = true): HeadersInit {
 export default function AdminPage() {
   const [secret, setSecret] = useState("");
   const [secretDraft, setSecretDraft] = useState("");
+  const [verified, setVerified] = useState(false);
+  const [verifying, setVerifying] = useState(false);
   const [songs, setSongs] = useState<AdminSong[]>([]);
   const [filterDifficulty, setFilterDifficulty] = useState<Difficulty | "all">(
     "all",
@@ -69,13 +71,54 @@ export default function AdminPage() {
   const [busy, setBusy] = useState(false);
   const [loadingList, setLoadingList] = useState(false);
 
-  useEffect(() => {
-    const saved = sessionStorage.getItem(SECRET_KEY) ?? "";
-    setSecret(saved);
-    setSecretDraft(saved);
+  const verifySecret = useCallback(async (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      setVerified(false);
+      setSecret("");
+      setError("Enter the admin secret to unlock this page.");
+      return false;
+    }
+    setVerifying(true);
+    setError(null);
+    setStatus(null);
+    try {
+      const res = await fetch("/api/admin/verify", {
+        headers: adminHeaders(trimmed, false),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setVerified(false);
+        setSecret("");
+        sessionStorage.removeItem(SECRET_KEY);
+        throw new Error(
+          typeof data.error === "string" ? data.error : "Invalid admin secret",
+        );
+      }
+      sessionStorage.setItem(SECRET_KEY, trimmed);
+      setSecret(trimmed);
+      setSecretDraft(trimmed);
+      setVerified(true);
+      setStatus("Admin unlocked.");
+      return true;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not verify secret");
+      return false;
+    } finally {
+      setVerifying(false);
+    }
   }, []);
 
+  useEffect(() => {
+    const saved = sessionStorage.getItem(SECRET_KEY) ?? "";
+    if (saved) void verifySecret(saved);
+  }, [verifySecret]);
+
   const loadSongs = useCallback(async () => {
+    if (!verified || !secret) {
+      setSongs([]);
+      return;
+    }
     setLoadingList(true);
     setError(null);
     try {
@@ -87,22 +130,28 @@ export default function AdminPage() {
         headers: adminHeaders(secret, false),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to load songs");
+      if (!res.ok) {
+        if (res.status === 401) {
+          setVerified(false);
+          setSecret("");
+          sessionStorage.removeItem(SECRET_KEY);
+        }
+        throw new Error(data.error || "Failed to load songs");
+      }
       setSongs(data.songs ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load songs");
     } finally {
       setLoadingList(false);
     }
-  }, [filterDifficulty, query, secret]);
+  }, [filterDifficulty, query, secret, verified]);
 
   useEffect(() => {
     void loadSongs();
   }, [loadSongs]);
 
   const saveSecret = () => {
-    sessionStorage.setItem(SECRET_KEY, secretDraft);
-    setSecret(secretDraft);
+    void verifySecret(secretDraft);
   };
 
   const setField = <K extends keyof SongForm>(key: K, value: SongForm[K]) => {
@@ -113,6 +162,17 @@ export default function AdminPage() {
     setForm(EMPTY_FORM);
     setEditingId(null);
     setFile(null);
+  };
+
+  const lockAdmin = () => {
+    sessionStorage.removeItem(SECRET_KEY);
+    setSecret("");
+    setSecretDraft("");
+    setVerified(false);
+    setSongs([]);
+    resetForm();
+    setStatus(null);
+    setError(null);
   };
 
   const lookupSpotify = async () => {
@@ -290,19 +350,46 @@ export default function AdminPage() {
             type="password"
             value={secretDraft}
             onChange={(e) => setSecretDraft(e.target.value)}
-            placeholder="ADMIN_SECRET or SYNC_SECRET (leave empty if unset)"
-            className="flex-1 rounded-full border border-white/15 bg-black px-4 py-2.5 text-sm outline-none focus:border-white/35"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") saveSecret();
+            }}
+            placeholder="ADMIN_SECRET or SYNC_SECRET"
+            disabled={verifying}
+            className="flex-1 rounded-full border border-white/15 bg-black px-4 py-2.5 text-sm outline-none focus:border-white/35 disabled:opacity-60"
           />
           <button
             type="button"
             onClick={saveSecret}
-            className="rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-black cursor-pointer"
+            disabled={verifying || !secretDraft.trim()}
+            className="rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-black cursor-pointer disabled:opacity-40"
           >
-            Use secret
+            {verifying ? "Verifying…" : verified ? "Re-verify" : "Unlock"}
           </button>
+          {verified && (
+            <button
+              type="button"
+              onClick={lockAdmin}
+              className="rounded-full border border-white/15 px-5 py-2.5 text-sm text-zinc-300 hover:border-white/30 hover:text-white cursor-pointer"
+            >
+              Lock
+            </button>
+          )}
         </div>
+        {!verified && (
+          <p className="mt-3 text-sm text-zinc-500">
+            Enter a valid admin secret to show the add-song form and library.
+          </p>
+        )}
+        {verified && (
+          <p className="mt-3 text-sm text-[#1ed760]">Admin verified.</p>
+        )}
+        {!verified && error && (
+          <p className="mt-2 text-sm text-red-400">{error}</p>
+        )}
       </section>
 
+      {verified && (
+      <>
       <section className="mb-10 rounded-2xl border border-white/10 bg-zinc-950/80 p-4 sm:p-6">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-white">
@@ -539,6 +626,8 @@ export default function AdminPage() {
           )}
         </ul>
       </section>
+      </>
+      )}
     </main>
   );
 }
