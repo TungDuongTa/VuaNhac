@@ -3,7 +3,6 @@ import { GUESS_DURATIONS } from "@/src/lib/constants";
 import {
   dailyIndex,
   getSongsByDifficulty,
-  migrateFromJsonIfEmpty,
   todayKey,
   updateSongPreview,
 } from "@/src/lib/songs";
@@ -24,8 +23,6 @@ export async function GET(request: Request) {
   if (!isDifficulty(difficultyParam)) {
     return NextResponse.json({ error: "Invalid difficulty" }, { status: 400 });
   }
-
-  await migrateFromJsonIfEmpty();
 
   const pool = await getSongsByDifficulty(difficultyParam);
 

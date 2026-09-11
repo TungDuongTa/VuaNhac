@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { assertAdmin } from "@/src/lib/admin-auth";
 import { DIFFICULTIES } from "@/src/lib/constants";
-import { deleteHostedAudioByUrl } from "@/src/lib/r2";
+import {
+  deleteHostedAudioByUrl,
+  getAudioObjectKeyFromUrl,
+  hasR2Credentials,
+  moveHostedAudio,
+} from "@/src/lib/r2";
 import {
   deleteSongById,
   getSongById,
@@ -49,7 +54,36 @@ export async function PATCH(request: Request, ctx: Ctx) {
   }
 
   try {
-    const song = await updateSongById(id, body);
+    const existing = await getSongById(id);
+    if (!existing) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    const nextDifficulty = body.difficulty ?? existing.difficulty;
+    const nextSpotifyId = (body.spotifyId ?? existing.spotifyId).trim();
+    const pathChanged =
+      nextDifficulty !== existing.difficulty ||
+      nextSpotifyId !== existing.spotifyId;
+
+    const patch: Partial<Song> = { ...body };
+
+    // When difficulty / spotifyId changes, relocate managed R2 audio to the new folder.
+    const hostedCandidate =
+      body.hostedUrl !== undefined ? body.hostedUrl : existing.hostedUrl;
+    if (
+      pathChanged &&
+      hostedCandidate &&
+      hasR2Credentials() &&
+      getAudioObjectKeyFromUrl(hostedCandidate)
+    ) {
+      patch.hostedUrl = await moveHostedAudio({
+        fromUrl: hostedCandidate,
+        spotifyId: nextSpotifyId,
+        difficulty: nextDifficulty,
+      });
+    }
+
+    const song = await updateSongById(id, patch);
     return NextResponse.json({ song });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Update failed";

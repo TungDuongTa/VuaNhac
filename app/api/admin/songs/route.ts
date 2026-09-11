@@ -4,7 +4,6 @@ import { DIFFICULTIES } from "@/src/lib/constants";
 import {
   createSong,
   listAdminSongs,
-  migrateFromJsonIfEmpty,
 } from "@/src/lib/songs";
 import type { Difficulty, Song } from "@/src/lib/types";
 
@@ -20,8 +19,6 @@ function isDifficulty(value: unknown): value is Difficulty {
 export async function GET(request: Request) {
   const denied = assertAdmin(request);
   if (denied) return denied;
-
-  await migrateFromJsonIfEmpty();
 
   const { searchParams } = new URL(request.url);
   const difficultyParam = searchParams.get("difficulty");

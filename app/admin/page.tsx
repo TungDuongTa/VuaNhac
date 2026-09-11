@@ -529,8 +529,7 @@ export default function AdminPage() {
           ))}
           {!loadingList && songs.length === 0 && (
             <li className="py-10 text-center text-sm text-zinc-500">
-              No songs yet. Add one above — empty MongoDB will also import{" "}
-              <code className="text-zinc-400">data/songs.json</code> once.
+              No songs yet. Add one above.
             </li>
           )}
         </ul>

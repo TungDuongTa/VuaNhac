@@ -65,6 +65,15 @@ body {
     box-shadow 0.65s ease;
 }
 
+@media (max-width: 1023px) {
+  .mode-panel {
+    border-left: none;
+    border-right: none;
+    border-top: none;
+    border-bottom: none;
+  }
+}
+
 .mode-panel::before {
   content: "";
   position: absolute;

@@ -1,6 +1,4 @@
 import { ObjectId, type Collection, type WithId } from "mongodb";
-import { promises as fs } from "fs";
-import path from "path";
 import { getDb } from "./mongodb";
 import type { Difficulty, Song } from "./types";
 
@@ -18,17 +16,52 @@ export type AdminSong = Song & {
 const COLLECTION = "songs";
 let indexesReady = false;
 
+async function ensureIndexes(col: Collection<SongRecord>): Promise<void> {
+  if (indexesReady) return;
+
+  // Drop legacy composite unique index (same track was allowed on multiple difficulties).
+  try {
+    await col.dropIndex("spotifyId_difficulty_unique");
+  } catch {
+    // Index may not exist on fresh DBs.
+  }
+
+  // If older duplicates exist, keep the newest doc per spotifyId.
+  const dupes = await col
+    .aggregate<{ _id: string; ids: ObjectId[] }>([
+      {
+        $group: {
+          _id: "$spotifyId",
+          ids: { $push: "$_id" },
+          newest: { $max: "$updatedAt" },
+          count: { $sum: 1 },
+        },
+      },
+      { $match: { count: { $gt: 1 } } },
+    ])
+    .toArray();
+
+  for (const group of dupes) {
+    const keep = await col.findOne(
+      { spotifyId: group._id },
+      { sort: { updatedAt: -1 } },
+    );
+    if (!keep) continue;
+    await col.deleteMany({
+      spotifyId: group._id,
+      _id: { $ne: keep._id },
+    });
+  }
+
+  await col.createIndex({ spotifyId: 1 }, { unique: true, name: "spotifyId_unique" });
+  await col.createIndex({ difficulty: 1 }, { name: "difficulty_1" });
+  indexesReady = true;
+}
+
 async function songsCollection(): Promise<Collection<SongRecord>> {
   const db = await getDb();
   const col = db.collection<SongRecord>(COLLECTION);
-  if (!indexesReady) {
-    await col.createIndex(
-      { spotifyId: 1, difficulty: 1 },
-      { unique: true, name: "spotifyId_difficulty_unique" },
-    );
-    await col.createIndex({ difficulty: 1 }, { name: "difficulty_1" });
-    indexesReady = true;
-  }
+  await ensureIndexes(col);
   return col;
 }
 
@@ -114,14 +147,11 @@ export async function upsertSongs(incoming: Song[]): Promise<number> {
 
   for (const raw of incoming) {
     const song = normalizeSongInput(raw);
-    const existing = await col.findOne({
-      spotifyId: song.spotifyId,
-      difficulty: song.difficulty,
-    });
+    const existing = await col.findOne({ spotifyId: song.spotifyId });
     if (!existing) added += 1;
 
     await col.updateOne(
-      { spotifyId: song.spotifyId, difficulty: song.difficulty },
+      { spotifyId: song.spotifyId },
       {
         $set: {
           title: song.title,
@@ -130,13 +160,15 @@ export async function upsertSongs(incoming: Song[]): Promise<number> {
           previewUrl: song.previewUrl,
           previewUpdatedAt: song.previewUpdatedAt,
           imageUrl: song.imageUrl,
-          difficulty: song.difficulty,
+          // Keep existing difficulty if the track is already in the library.
+          difficulty: existing?.difficulty ?? song.difficulty,
           spotifyId: song.spotifyId,
-          // Preserve curated hosted clips unless the incoming payload sets one.
           hostedUrl: song.hostedUrl ?? existing?.hostedUrl ?? null,
           updatedAt: now,
         },
-        $setOnInsert: { createdAt: now },
+        $setOnInsert: {
+          createdAt: now,
+        },
       },
       { upsert: true },
     );
@@ -149,6 +181,13 @@ export async function createSong(raw: Song): Promise<AdminSong> {
   const col = await songsCollection();
   const song = normalizeSongInput(raw);
   const now = new Date();
+
+  const existing = await col.findOne({ spotifyId: song.spotifyId });
+  if (existing) {
+    throw new Error(
+      `Song already exists (difficulty: ${existing.difficulty}). Each Spotify track can only be added once.`,
+    );
+  }
 
   try {
     const result = await col.insertOne({
@@ -167,7 +206,7 @@ export async function createSong(raw: Song): Promise<AdminSong> {
       (error as { code?: number }).code === 11000
     ) {
       throw new Error(
-        `Song already exists for ${song.spotifyId} (${song.difficulty})`,
+        `Song already exists for Spotify ID ${song.spotifyId}. Each track can only be added once.`,
       );
     }
     throw error;
@@ -184,21 +223,16 @@ export async function updateSongById(
   const existing = await col.findOne({ _id });
   if (!existing) throw new Error("Song not found");
 
-  const nextDifficulty = patch.difficulty ?? existing.difficulty;
   const nextSpotifyId = (patch.spotifyId ?? existing.spotifyId).trim();
 
-  if (
-    nextSpotifyId !== existing.spotifyId ||
-    nextDifficulty !== existing.difficulty
-  ) {
+  if (nextSpotifyId !== existing.spotifyId) {
     const clash = await col.findOne({
       spotifyId: nextSpotifyId,
-      difficulty: nextDifficulty,
       _id: { $ne: _id },
     });
     if (clash) {
       throw new Error(
-        `Song already exists for ${nextSpotifyId} (${nextDifficulty})`,
+        `Song already exists for Spotify ID ${nextSpotifyId} (difficulty: ${clash.difficulty}). Each track can only be added once.`,
       );
     }
   }
@@ -255,23 +289,6 @@ export async function findSong(
     difficulty ? { spotifyId, difficulty } : { spotifyId },
   );
   return doc ? toSong(doc) : undefined;
-}
-
-/** One-time import from data/songs.json when the collection is empty. */
-export async function migrateFromJsonIfEmpty(): Promise<number> {
-  const col = await songsCollection();
-  const count = await col.countDocuments();
-  if (count > 0) return 0;
-
-  const dataPath = path.join(process.cwd(), "data", "songs.json");
-  try {
-    const raw = await fs.readFile(dataPath, "utf8");
-    const songs = JSON.parse(raw) as Song[];
-    if (!Array.isArray(songs) || songs.length === 0) return 0;
-    return upsertSongs(songs);
-  } catch {
-    return 0;
-  }
 }
 
 /** Stable daily index from date + difficulty. */
