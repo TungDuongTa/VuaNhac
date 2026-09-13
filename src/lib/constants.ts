@@ -1,4 +1,4 @@
-import type { Difficulty } from "./types";
+import type { Difficulty, MusicCatalog } from "./types";
 
 export const DIFFICULTIES: Difficulty[] = [
   "easy",
@@ -7,6 +7,16 @@ export const DIFFICULTIES: Difficulty[] = [
   "expert",
   "impossible",
 ];
+
+export const MUSIC_CATALOGS: MusicCatalog[] = ["vietnamese", "worldwide"];
+
+export const CATALOG_META: Record<
+  MusicCatalog,
+  { label: string; shortLabel: string }
+> = {
+  vietnamese: { label: "Việt Nam", shortLabel: "VN" },
+  worldwide: { label: "Worldwide", shortLabel: "World" },
+};
 
 export const DIFFICULTY_META: Record<
   Difficulty,

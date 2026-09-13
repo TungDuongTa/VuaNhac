@@ -1,4 +1,5 @@
 import type { RefObject } from "react";
+import { useEffect, useRef } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { SplitText } from "gsap/SplitText";
@@ -14,6 +15,7 @@ type Args = {
   panelRef: RefObject<HTMLElement | null>;
   revealRef: RefObject<HTMLDivElement | null>;
   confettiCanvasRef: RefObject<HTMLCanvasElement | null>;
+  onComplete?: () => void;
 };
 
 export function useRevealAnimations({
@@ -22,14 +24,27 @@ export function useRevealAnimations({
   panelRef,
   revealRef,
   confettiCanvasRef,
+  onComplete,
 }: Args) {
+  const onCompleteRef = useRef(onComplete);
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
+
+  const notifyComplete = () => {
+    onCompleteRef.current?.();
+  };
+
   useGSAP(
     () => {
       if (status !== "lost" || !answer) return;
 
       const panel = panelRef.current;
       const root = revealRef.current;
-      if (!panel || !root) return;
+      if (!panel || !root) {
+        notifyComplete();
+        return;
+      }
 
       const kicker = root.querySelector<HTMLElement>(".result-kicker");
       const artWrap = root.querySelector<HTMLElement>(".result-artwork-wrap");
@@ -37,7 +52,10 @@ export function useRevealAnimations({
       const artist = root.querySelector<HTMLElement>(".result-artist");
       const stamp = root.querySelector<HTMLElement>(".result-stamp");
 
-      if (!kicker || !artWrap || !titleEl || !artist || !stamp) return;
+      if (!kicker || !artWrap || !titleEl || !artist || !stamp) {
+        notifyComplete();
+        return;
+      }
 
       const split = SplitText.create(titleEl, {
         type: "words",
@@ -47,7 +65,10 @@ export function useRevealAnimations({
       const words = split.words;
 
       const wash = { value: 0 };
-      const tl = gsap.timeline({ defaults: { ease: "power2.out" } });
+      const tl = gsap.timeline({
+        defaults: { ease: "power2.out" },
+        onComplete: notifyComplete,
+      });
 
       gsap.set(kicker, { opacity: 0 });
       gsap.set(artWrap, { yPercent: 25, opacity: 0 });
@@ -138,7 +159,10 @@ export function useRevealAnimations({
 
       const panel = panelRef.current;
       const root = revealRef.current;
-      if (!panel || !root) return;
+      if (!panel || !root) {
+        notifyComplete();
+        return;
+      }
 
       const flash = panel.querySelector<HTMLElement>(".win-flash");
       const artStage = root.querySelector<HTMLElement>(".result-artwork-stage");
@@ -148,6 +172,7 @@ export function useRevealAnimations({
       const stamp = root.querySelector<HTMLElement>(".result-stamp");
 
       if (!flash || !artStage || !veil || !titleEl || !artist || !stamp) {
+        notifyComplete();
         return;
       }
 
@@ -158,7 +183,10 @@ export function useRevealAnimations({
       });
       const words = split.words;
 
-      const tl = gsap.timeline({ defaults: { ease: "power2.out" } });
+      const tl = gsap.timeline({
+        defaults: { ease: "power2.out" },
+        onComplete: notifyComplete,
+      });
       const confettiTimers: number[] = [];
       let resetConfetti: (() => void) | undefined;
 

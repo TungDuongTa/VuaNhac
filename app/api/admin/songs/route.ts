@@ -3,6 +3,7 @@ import { assertAdmin } from "@/src/lib/admin-auth";
 import { DIFFICULTIES } from "@/src/lib/constants";
 import {
   createSong,
+  isMusicCatalog,
   listAdminSongs,
 } from "@/src/lib/songs";
 import type { Difficulty, Song } from "@/src/lib/types";
@@ -22,13 +23,16 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const difficultyParam = searchParams.get("difficulty");
+  const catalogParam = searchParams.get("catalog");
   const q = searchParams.get("q") ?? undefined;
   const difficulty =
     difficultyParam && isDifficulty(difficultyParam)
       ? difficultyParam
       : undefined;
+  const catalog =
+    catalogParam && isMusicCatalog(catalogParam) ? catalogParam : undefined;
 
-  const songs = await listAdminSongs({ difficulty, q });
+  const songs = await listAdminSongs({ difficulty, catalog, q });
   return NextResponse.json({ songs });
 }
 
@@ -52,6 +56,9 @@ export async function POST(request: Request) {
   if (!isDifficulty(body.difficulty)) {
     return NextResponse.json({ error: "Invalid difficulty" }, { status: 400 });
   }
+  if (body.catalog !== undefined && !isMusicCatalog(body.catalog)) {
+    return NextResponse.json({ error: "Invalid catalog" }, { status: 400 });
+  }
 
   try {
     const song = await createSong({
@@ -63,6 +70,7 @@ export async function POST(request: Request) {
       previewUpdatedAt: body.previewUpdatedAt ?? new Date().toISOString(),
       imageUrl: body.imageUrl ?? null,
       difficulty: body.difficulty,
+      catalog: body.catalog ?? "vietnamese",
       hostedUrl: body.hostedUrl ?? null,
     });
     return NextResponse.json({ song }, { status: 201 });

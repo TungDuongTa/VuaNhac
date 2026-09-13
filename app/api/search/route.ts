@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { readSongs } from "@/src/lib/songs";
+import { isMusicCatalog, readSongs } from "@/src/lib/songs";
 import type { SearchResult } from "@/src/lib/types";
 import { normalizeVietnamese } from "@/src/lib/vietnamese";
 
@@ -8,12 +8,15 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const q = searchParams.get("q")?.trim() ?? "";
+  const catalogParam = searchParams.get("catalog");
 
   if (q.length < 1) {
     return NextResponse.json({ results: [] as SearchResult[] });
   }
 
-  const pool = await readSongs();
+  const catalog =
+    catalogParam && isMusicCatalog(catalogParam) ? catalogParam : undefined;
+  const pool = await readSongs(catalog ? { catalog } : undefined);
   const needle = normalizeVietnamese(q);
 
   const scored = pool

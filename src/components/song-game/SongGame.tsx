@@ -10,10 +10,12 @@ import {
 } from "@/src/lib/constants";
 import type {
   Difficulty,
+  MusicCatalog,
   PublicSong,
   SearchResult,
   SongAnswer,
 } from "@/src/lib/types";
+import { CatalogPills } from "./CatalogPills";
 import { DifficultyPills } from "./DifficultyPills";
 import { DifficultySidebar } from "./DifficultySidebar";
 import { GuessSearchBar } from "./GuessSearchBar";
@@ -31,6 +33,7 @@ import { playbackPlan } from "./utils";
 gsap.registerPlugin(useGSAP);
 
 export function SongGame() {
+  const [catalog, setCatalog] = useState<MusicCatalog>("vietnamese");
   const [difficulty, setDifficulty] = useState<Difficulty>("easy");
   const [status, setStatus] = useState<GameStatus>("loading");
   const [message, setMessage] = useState<string | null>(null);
@@ -50,6 +53,7 @@ export function SongGame() {
   const [volume, setVolume] = useState(0.35);
   const [menuOpen, setMenuOpen] = useState(false);
   const [revealDismissed, setRevealDismissed] = useState(false);
+  const [revealCanDismiss, setRevealCanDismiss] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const stopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -104,7 +108,19 @@ export function SongGame() {
     panelRef,
     revealRef,
     confettiCanvasRef,
+    onComplete: () => setRevealCanDismiss(true),
   });
+
+  useEffect(() => {
+    if (status !== "won" && status !== "lost") {
+      setRevealCanDismiss(false);
+      return;
+    }
+    setRevealCanDismiss(false);
+    // Safety: unlock dismiss if animation callback never fires
+    const fallback = window.setTimeout(() => setRevealCanDismiss(true), 3500);
+    return () => window.clearTimeout(fallback);
+  }, [status, answer?.id]);
 
   useEffect(() => {
     durationRef.current = currentDuration;
@@ -189,7 +205,8 @@ export function SongGame() {
   }, [volume]);
 
   const loadSong = useCallback(
-    async (diff: Difficulty, opts?: { reroll?: boolean }) => {
+    async (diff: Difficulty, opts?: { reroll?: boolean; catalog?: MusicCatalog }) => {
+      const activeCatalog = opts?.catalog ?? catalog;
       setMessage(null);
       setGuessIndex(0);
       setAnswer(null);
@@ -200,7 +217,10 @@ export function SongGame() {
       resetPlayback();
 
       try {
-        const params = new URLSearchParams({ difficulty: diff });
+        const params = new URLSearchParams({
+          difficulty: diff,
+          catalog: activeCatalog,
+        });
         if (opts?.reroll) {
           params.set("reroll", "1");
           if (songIdRef.current) params.set("exclude", songIdRef.current);
@@ -230,12 +250,12 @@ export function SongGame() {
         setMessage("Network error loading song");
       }
     },
-    [resetPlayback],
+    [catalog, resetPlayback],
   );
 
   useEffect(() => {
-    void loadSong(difficulty);
-  }, [difficulty, loadSong]);
+    void loadSong(difficulty, { catalog });
+  }, [difficulty, catalog, loadSong]);
 
   useEffect(() => {
     return () => {
@@ -260,7 +280,7 @@ export function SongGame() {
       searchAbortRef.current = controller;
       try {
         const res = await fetch(
-          `/api/search?q=${encodeURIComponent(query)}`,
+          `/api/search?q=${encodeURIComponent(query)}&catalog=${catalog}`,
           { signal: controller.signal },
         );
         if (!res.ok) return;
@@ -273,7 +293,7 @@ export function SongGame() {
     }, 200);
 
     return () => clearTimeout(handle);
-  }, [query, status, revealDismissed]);
+  }, [query, status, revealDismissed, catalog]);
 
   useEffect(() => {
     const canInteract =
@@ -455,6 +475,7 @@ export function SongGame() {
   }, [status, answer?.id, song?.id, songStart, revealDismissed, startProgressTracking]);
 
   const dismissReveal = useCallback(() => {
+    if (!revealCanDismiss) return;
     setRevealDismissed(true);
     pauseAudio();
     const panel = panelRef.current;
@@ -462,7 +483,7 @@ export function SongGame() {
       panel.classList.remove("is-shaking");
       panel.style.removeProperty("--lost-wash-opacity");
     }
-  }, [pauseAudio]);
+  }, [pauseAudio, revealCanDismiss]);
 
   const revealAnswer = async () => {
     if (!song) return;
@@ -664,18 +685,22 @@ export function SongGame() {
             borderColor: "rgba(255,255,255,0.12)",
           }}
           onClick={() => {
-            if (showingReveal) dismissReveal();
+            if (showingReveal && revealCanDismiss) dismissReveal();
           }}
           onKeyDown={(e) => {
-            if (!showingReveal) return;
+            if (!showingReveal || !revealCanDismiss) return;
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault();
               dismissReveal();
             }
           }}
-          role={showingReveal ? "button" : undefined}
-          tabIndex={showingReveal ? 0 : undefined}
-          aria-label={showingReveal ? "Dismiss reveal and show game controls" : undefined}
+          role={showingReveal && revealCanDismiss ? "button" : undefined}
+          tabIndex={showingReveal && revealCanDismiss ? 0 : undefined}
+          aria-label={
+            showingReveal && revealCanDismiss
+              ? "Dismiss reveal and show game controls"
+              : undefined
+          }
         >
           {showingReveal && status === "won" && (
             <>
@@ -690,10 +715,13 @@ export function SongGame() {
 
           <div className="flex w-full flex-col items-center gap-8 sm:gap-10">
             {!showingReveal && status !== "setup" && status !== "error" && (
-              <DifficultyPills
-                difficulty={difficulty}
-                onDifficultyChange={setDifficulty}
-              />
+              <div className="flex w-full flex-col items-center gap-3">
+                <CatalogPills catalog={catalog} onCatalogChange={setCatalog} />
+                <DifficultyPills
+                  difficulty={difficulty}
+                  onDifficultyChange={setDifficulty}
+                />
+              </div>
             )}
 
             <div className="flex w-full flex-col items-center gap-8 sm:gap-10">
@@ -741,7 +769,11 @@ export function SongGame() {
                     answer={answer}
                     guessedInSeconds={guessedInSeconds}
                   />
-                  <p className="mt-6 text-center text-xs text-white/45">
+                  <p
+                    className={`mt-6 text-center text-xs transition-opacity duration-300 ${
+                      revealCanDismiss ? "text-white/45" : "text-transparent"
+                    }`}
+                  >
                     Tap anywhere to continue
                   </p>
                 </div>

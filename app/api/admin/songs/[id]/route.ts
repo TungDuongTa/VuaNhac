@@ -10,6 +10,7 @@ import {
 import {
   deleteSongById,
   getSongById,
+  isMusicCatalog,
   updateSongById,
 } from "@/src/lib/songs";
 import type { Difficulty, Song } from "@/src/lib/types";
@@ -51,6 +52,9 @@ export async function PATCH(request: Request, ctx: Ctx) {
 
   if (body.difficulty !== undefined && !isDifficulty(body.difficulty)) {
     return NextResponse.json({ error: "Invalid difficulty" }, { status: 400 });
+  }
+  if (body.catalog !== undefined && !isMusicCatalog(body.catalog)) {
+    return NextResponse.json({ error: "Invalid catalog" }, { status: 400 });
   }
 
   try {

@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { DIFFICULTIES, DIFFICULTY_META } from "@/src/lib/constants";
-import type { Difficulty } from "@/src/lib/types";
+import { CATALOG_META, DIFFICULTIES, DIFFICULTY_META, MUSIC_CATALOGS } from "@/src/lib/constants";
+import type { Difficulty, MusicCatalog } from "@/src/lib/types";
 
 type AdminSong = {
   id: string;
@@ -15,6 +15,7 @@ type AdminSong = {
   previewUpdatedAt: string | null;
   imageUrl: string | null;
   difficulty: Difficulty;
+  catalog: MusicCatalog;
   hostedUrl: string | null;
   createdAt: string;
   updatedAt: string;
@@ -29,6 +30,7 @@ type SongForm = {
   previewUrl: string;
   imageUrl: string;
   difficulty: Difficulty;
+  catalog: MusicCatalog;
   hostedUrl: string;
 };
 
@@ -41,6 +43,7 @@ const EMPTY_FORM: SongForm = {
   previewUrl: "",
   imageUrl: "",
   difficulty: "easy",
+  catalog: "vietnamese",
   hostedUrl: "",
 };
 
@@ -60,6 +63,9 @@ export default function AdminPage() {
   const [verifying, setVerifying] = useState(false);
   const [songs, setSongs] = useState<AdminSong[]>([]);
   const [filterDifficulty, setFilterDifficulty] = useState<Difficulty | "all">(
+    "all",
+  );
+  const [filterCatalog, setFilterCatalog] = useState<MusicCatalog | "all">(
     "all",
   );
   const [query, setQuery] = useState("");
@@ -125,6 +131,7 @@ export default function AdminPage() {
       const params = new URLSearchParams();
       if (filterDifficulty !== "all")
         params.set("difficulty", filterDifficulty);
+      if (filterCatalog !== "all") params.set("catalog", filterCatalog);
       if (query.trim()) params.set("q", query.trim());
       const res = await fetch(`/api/admin/songs?${params}`, {
         headers: adminHeaders(secret, false),
@@ -144,7 +151,7 @@ export default function AdminPage() {
     } finally {
       setLoadingList(false);
     }
-  }, [filterDifficulty, query, secret, verified]);
+  }, [filterDifficulty, filterCatalog, query, secret, verified]);
 
   useEffect(() => {
     void loadSongs();
@@ -245,6 +252,7 @@ export default function AdminPage() {
         previewUpdatedAt: form.previewUrl ? new Date().toISOString() : null,
         imageUrl: form.imageUrl || null,
         difficulty: form.difficulty,
+        catalog: form.catalog,
         hostedUrl,
       };
 
@@ -280,6 +288,7 @@ export default function AdminPage() {
       previewUrl: song.previewUrl ?? "",
       imageUrl: song.imageUrl ?? "",
       difficulty: song.difficulty,
+      catalog: song.catalog ?? "worldwide",
       hostedUrl: song.hostedUrl ?? "",
     });
     setFile(null);
@@ -448,6 +457,24 @@ export default function AdminPage() {
                 ))}
               </select>
             </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-semibold tracking-wide text-zinc-500">
+                Catalog
+              </span>
+              <select
+                value={form.catalog}
+                onChange={(e) =>
+                  setField("catalog", e.target.value as MusicCatalog)
+                }
+                className="w-full rounded-full border border-white/15 bg-black px-4 py-2.5 text-sm outline-none focus:border-white/35"
+              >
+                {MUSIC_CATALOGS.map((c) => (
+                  <option key={c} value={c}>
+                    {CATALOG_META[c].label}
+                  </option>
+                ))}
+              </select>
+            </label>
             <Field
               label="Title"
               value={form.title}
@@ -542,6 +569,20 @@ export default function AdminPage() {
                 </option>
               ))}
             </select>
+            <select
+              value={filterCatalog}
+              onChange={(e) =>
+                setFilterCatalog(e.target.value as MusicCatalog | "all")
+              }
+              className="rounded-full border border-white/15 bg-black px-3 py-2 text-sm"
+            >
+              <option value="all">All catalogs</option>
+              {MUSIC_CATALOGS.map((c) => (
+                <option key={c} value={c}>
+                  {CATALOG_META[c].label}
+                </option>
+              ))}
+            </select>
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -594,6 +635,9 @@ export default function AdminPage() {
                       }}
                     >
                       {DIFFICULTY_META[song.difficulty].label}
+                    </span>
+                    <span className="mr-2 inline-block rounded-full bg-white/10 px-2 py-0.5 font-semibold text-zinc-300">
+                      {CATALOG_META[song.catalog ?? "worldwide"].label}
                     </span>
                     {song.previewUrl ? "preview · " : "no preview · "}
                     {song.hostedUrl ? "hosted" : "no hosted"}

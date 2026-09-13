@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
-import { GUESS_DURATIONS } from "@/src/lib/constants";
+import { DIFFICULTIES, GUESS_DURATIONS } from "@/src/lib/constants";
 import {
   dailyIndex,
   getSongsByDifficulty,
+  isMusicCatalog,
   todayKey,
   updateSongPreview,
 } from "@/src/lib/songs";
 import { getTrack, hasSpotifyCredentials } from "@/src/lib/spotify";
-import type { Difficulty, PublicSong } from "@/src/lib/types";
-import { DIFFICULTIES } from "@/src/lib/constants";
+import type { Difficulty, MusicCatalog, PublicSong } from "@/src/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -19,12 +19,17 @@ function isDifficulty(value: string): value is Difficulty {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const difficultyParam = searchParams.get("difficulty") ?? "easy";
+  const catalogParam = searchParams.get("catalog") ?? "vietnamese";
 
   if (!isDifficulty(difficultyParam)) {
     return NextResponse.json({ error: "Invalid difficulty" }, { status: 400 });
   }
+  if (!isMusicCatalog(catalogParam)) {
+    return NextResponse.json({ error: "Invalid catalog" }, { status: 400 });
+  }
 
-  const pool = await getSongsByDifficulty(difficultyParam);
+  const catalog: MusicCatalog = catalogParam;
+  const pool = await getSongsByDifficulty(difficultyParam, catalog);
 
   if (pool.length === 0) {
     if (!hasSpotifyCredentials()) {
@@ -40,8 +45,7 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         error: "empty_pool",
-        message:
-          "No playable songs for this difficulty. Add tracks in /admin or run POST /api/sync.",
+        message: `No playable songs for ${catalog === "vietnamese" ? "Việt Nam" : "Worldwide"} · ${difficultyParam}. Tag songs with this catalog in /admin.`,
       },
       { status: 404 },
     );
@@ -49,9 +53,10 @@ export async function GET(request: Request) {
 
   const dateKey = todayKey();
   const excludeId = searchParams.get("exclude")?.trim() || null;
-  const random = searchParams.get("random") === "1" || searchParams.get("reroll") === "1";
+  const random =
+    searchParams.get("random") === "1" || searchParams.get("reroll") === "1";
 
-  let index = dailyIndex(dateKey, difficultyParam, pool.length);
+  let index = dailyIndex(dateKey, difficultyParam, pool.length, catalog);
   if (random) {
     if (pool.length === 1) {
       index = 0;
@@ -59,7 +64,8 @@ export async function GET(request: Request) {
       const candidates = pool
         .map((s, i) => ({ s, i }))
         .filter(({ s }) => !excludeId || s.spotifyId !== excludeId);
-      const pick = candidates.length > 0 ? candidates : pool.map((s, i) => ({ s, i }));
+      const pick =
+        candidates.length > 0 ? candidates : pool.map((s, i) => ({ s, i }));
       index = pick[Math.floor(Math.random() * pick.length)]!.i;
     }
   }
@@ -70,11 +76,7 @@ export async function GET(request: Request) {
     song.previewUrl?.startsWith("http://localhost");
 
   // Refresh Spotify CDN previews when we rely on them (skip if hosted clip exists).
-  if (
-    !song.hostedUrl &&
-    hasSpotifyCredentials() &&
-    !isLocalPreview
-  ) {
+  if (!song.hostedUrl && hasSpotifyCredentials() && !isLocalPreview) {
     try {
       const fresh = await getTrack(song.spotifyId);
       if (fresh?.preview_url) {
@@ -116,6 +118,7 @@ export async function GET(request: Request) {
     hostedUrl: song.hostedUrl ?? null,
     imageUrl: song.imageUrl,
     difficulty: song.difficulty,
+    catalog: song.catalog,
     guessDurations: [...GUESS_DURATIONS],
   };
 

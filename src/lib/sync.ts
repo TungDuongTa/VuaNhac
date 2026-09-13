@@ -60,6 +60,7 @@ function trackToSong(
     previewUpdatedAt: new Date().toISOString(),
     imageUrl: track.album.images[0]?.url ?? null,
     difficulty,
+    catalog: "worldwide",
   };
 }
 
