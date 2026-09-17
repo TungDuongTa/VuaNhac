@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import Link from "next/link";
 import { PANEL_IDLE, STAGE_OPTIONS } from "@/src/lib/constants";
 import type { PublicSong } from "@/src/lib/types";
 import { SettingsPill, SpeakerIcon, TimerIcon, WaveIcon } from "./icons";
@@ -28,6 +29,13 @@ export function SettingsPanel({
 }: SettingsPanelProps) {
   return (
     <div className="flex w-full flex-col items-center space-y-7">
+      <Link
+        href="/ranking"
+        className="w-full rounded-full border border-white/15 bg-[#1c1c1c] py-2.5 text-center text-sm font-semibold text-zinc-200 transition hover:border-white/30 hover:text-white"
+      >
+        Rankings
+      </Link>
+
       <section className="w-full">
         <h2 className="mb-3 flex items-center justify-center gap-2 text-[11px] font-semibold tracking-[0.18em] text-white">
           <WaveIcon />

@@ -2,28 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CATALOG_META, DIFFICULTY_META } from "@/src/lib/constants";
+import { CATALOG_META } from "@/src/lib/constants";
 import type { RunResult } from "@/src/lib/run-types";
-
-function formatAvg(ms: number): string {
-  if (!ms || ms <= 0) return "—";
-  const seconds = ms / 1000;
-  if (seconds < 60) return `${seconds.toFixed(1)}s`;
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}m ${s.toFixed(0)}s`;
-}
-
-function formatWhen(iso: string): string {
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
-}
 
 export default function RankingPage() {
   const [runs, setRuns] = useState<RunResult[]>([]);
@@ -36,7 +16,7 @@ export default function RankingPage() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch("/api/runs?limit=50");
+        const res = await fetch("/api/runs?limit=100");
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Failed to load rankings");
         if (!cancelled) setRuns(data.runs ?? []);
@@ -64,7 +44,8 @@ export default function RankingPage() {
             Run rankings
           </h1>
           <p className="mt-2 max-w-lg text-sm text-zinc-400">
-            Sorted by songs cleared, then fastest average solve time.
+            Top 100 · sorted by points (shorter clip + harder difficulty =
+            more), then 0.1s hits, then wins.
           </p>
         </div>
         <Link
@@ -89,16 +70,15 @@ export default function RankingPage() {
         )}
         {!loading && !error && runs.length > 0 && (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[32rem] text-left text-sm">
+            <table className="w-full min-w-[24rem] text-left text-sm">
               <thead>
                 <tr className="border-b border-white/10 text-xs uppercase tracking-wide text-zinc-500">
                   <th className="px-2 py-3 font-semibold">#</th>
                   <th className="px-2 py-3 font-semibold">Player</th>
-                  <th className="px-2 py-3 font-semibold">Correct</th>
-                  <th className="px-2 py-3 font-semibold">Avg time</th>
                   <th className="px-2 py-3 font-semibold">Catalog</th>
-                  <th className="px-2 py-3 font-semibold">Peak</th>
-                  <th className="px-2 py-3 font-semibold">When</th>
+                  <th className="px-2 py-3 font-semibold">Points</th>
+                  <th className="px-2 py-3 font-semibold">0.1s</th>
+                  <th className="px-2 py-3 font-semibold">Win</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/8">
@@ -110,40 +90,35 @@ export default function RankingPage() {
                     <td className="px-2 py-3 font-medium text-white">
                       {run.playerName}
                     </td>
+                    <td className="px-2 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {(run.catalogs?.length
+                          ? run.catalogs
+                          : [run.catalog]
+                        ).map((c) => (
+                          <span
+                            key={c}
+                            className="inline-block rounded-full px-2 py-0.5 text-xs font-semibold"
+                            style={{
+                              backgroundColor:
+                                CATALOG_META[c]?.activeBg ??
+                                "rgba(255,255,255,0.1)",
+                              color: CATALOG_META[c]?.color ?? "#a1a1aa",
+                            }}
+                          >
+                            {CATALOG_META[c]?.shortLabel ?? c}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
                     <td className="px-2 py-3 tabular-nums font-semibold text-white">
-                      {run.correctCount}
+                      {run.points ?? 0}
                     </td>
                     <td className="px-2 py-3 tabular-nums">
-                      {formatAvg(run.avgTimeMs)}
+                      {run.instantHits ?? 0}
                     </td>
-                    <td className="px-2 py-3">
-                      <span
-                        className="inline-block rounded-full px-2 py-0.5 text-xs font-semibold"
-                        style={{
-                          backgroundColor:
-                            CATALOG_META[run.catalog]?.idleBg ??
-                            "rgba(255,255,255,0.1)",
-                          color:
-                            CATALOG_META[run.catalog]?.color ?? "#a1a1aa",
-                        }}
-                      >
-                        {CATALOG_META[run.catalog]?.label ?? run.catalog}
-                      </span>
-                    </td>
-                    <td className="px-2 py-3">
-                      <span
-                        className="inline-block rounded-full px-2 py-0.5 text-xs font-semibold"
-                        style={{
-                          backgroundColor:
-                            DIFFICULTY_META[run.highestDifficulty].idleBg,
-                          color: DIFFICULTY_META[run.highestDifficulty].color,
-                        }}
-                      >
-                        {DIFFICULTY_META[run.highestDifficulty].label}
-                      </span>
-                    </td>
-                    <td className="px-2 py-3 text-xs text-zinc-500">
-                      {formatWhen(run.createdAt)}
+                    <td className="px-2 py-3 tabular-nums font-semibold text-white">
+                      {run.correctCount}
                     </td>
                   </tr>
                 ))}

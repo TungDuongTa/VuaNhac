@@ -4,6 +4,7 @@ import {
   dailyIndex,
   getSongsByDifficulty,
   isMusicCatalog,
+  normalizeCatalogListOrDefault,
   todayKey,
   updateSongPreview,
 } from "@/src/lib/songs";
@@ -16,20 +17,26 @@ function isDifficulty(value: string): value is Difficulty {
   return DIFFICULTIES.includes(value as Difficulty);
 }
 
+function parseCatalogs(searchParams: URLSearchParams): MusicCatalog[] {
+  const multi = searchParams.get("catalogs");
+  if (multi?.trim()) {
+    return normalizeCatalogListOrDefault(multi.split(","));
+  }
+  const single = searchParams.get("catalog");
+  if (single && isMusicCatalog(single)) return [single];
+  return ["vietnamese"];
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const difficultyParam = searchParams.get("difficulty") ?? "easy";
-  const catalogParam = searchParams.get("catalog") ?? "vietnamese";
+  const catalogs = parseCatalogs(searchParams);
 
   if (!isDifficulty(difficultyParam)) {
     return NextResponse.json({ error: "Invalid difficulty" }, { status: 400 });
   }
-  if (!isMusicCatalog(catalogParam)) {
-    return NextResponse.json({ error: "Invalid catalog" }, { status: 400 });
-  }
 
-  const catalog: MusicCatalog = catalogParam;
-  const pool = await getSongsByDifficulty(difficultyParam, catalog);
+  const pool = await getSongsByDifficulty(difficultyParam, catalogs);
 
   if (pool.length === 0) {
     if (!hasSpotifyCredentials()) {
@@ -42,10 +49,13 @@ export async function GET(request: Request) {
         { status: 503 },
       );
     }
+    const labels = catalogs
+      .map((c) => (c === "vietnamese" ? "Việt Nam" : "Worldwide"))
+      .join(" + ");
     return NextResponse.json(
       {
         error: "empty_pool",
-        message: `No playable songs for ${catalog === "vietnamese" ? "Việt Nam" : "Worldwide"} · ${difficultyParam}. Tag songs with this catalog in /admin.`,
+        message: `No playable songs for ${labels} · ${difficultyParam}. Enable another catalog or add tracks in /admin.`,
       },
       { status: 404 },
     );
@@ -62,7 +72,12 @@ export async function GET(request: Request) {
   const random =
     searchParams.get("random") === "1" || searchParams.get("reroll") === "1";
 
-  let index = dailyIndex(dateKey, difficultyParam, pool.length, catalog);
+  let index = dailyIndex(
+    dateKey,
+    difficultyParam,
+    pool.length,
+    catalogs[0] ?? "vietnamese",
+  );
   let excludedReset = false;
 
   if (random) {
@@ -70,7 +85,6 @@ export async function GET(request: Request) {
       .map((s, i) => ({ s, i }))
       .filter(({ s }) => !excludeIds.has(s.spotifyId));
 
-    // All songs in this pool were already seen this session — recycle the full pool.
     if (candidates.length === 0) {
       candidates = pool.map((s, i) => ({ s, i }));
       excludedReset = true;
@@ -84,7 +98,6 @@ export async function GET(request: Request) {
     song.previewUrl?.startsWith("/") ||
     song.previewUrl?.startsWith("http://localhost");
 
-  // Refresh Spotify CDN previews when we rely on them (skip if hosted clip exists).
   if (!song.hostedUrl && hasSpotifyCredentials() && !isLocalPreview) {
     try {
       const fresh = await getTrack(song.spotifyId);

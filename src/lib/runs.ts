@@ -1,14 +1,19 @@
-import { ObjectId, type Collection, type WithId } from "mongodb";
+import { type Collection, type WithId } from "mongodb";
 import { getDb } from "./mongodb";
+import { normalizeCatalogListOrDefault } from "./songs";
 import type { Difficulty, MusicCatalog } from "./types";
 import type { RunResult, RunSubmitInput } from "./run-types";
 
 type RunRecord = {
   playerName: string;
   catalog: MusicCatalog;
+  catalogs?: MusicCatalog[];
   correctCount: number;
-  avgTimeMs: number;
-  totalTimeMs: number;
+  points?: number;
+  instantHits?: number;
+  /** Legacy fields from older runs. */
+  avgTimeMs?: number;
+  totalTimeMs?: number;
   highestDifficulty: Difficulty;
   createdAt: Date;
 };
@@ -19,8 +24,8 @@ let indexesReady = false;
 async function ensureIndexes(col: Collection<RunRecord>): Promise<void> {
   if (indexesReady) return;
   await col.createIndex(
-    { correctCount: -1, avgTimeMs: 1, createdAt: 1 },
-    { name: "ranking_sort" },
+    { points: -1, instantHits: -1, correctCount: -1, createdAt: 1 },
+    { name: "ranking_sort_v3" },
   );
   indexesReady = true;
 }
@@ -33,13 +38,17 @@ async function runsCollection(): Promise<Collection<RunRecord>> {
 }
 
 function toRunResult(doc: WithId<RunRecord>): RunResult {
+  const catalogs = normalizeCatalogListOrDefault(
+    doc.catalogs?.length ? doc.catalogs : [doc.catalog],
+  );
   return {
     id: doc._id.toHexString(),
     playerName: doc.playerName,
-    catalog: doc.catalog,
+    catalog: catalogs[0] ?? "vietnamese",
+    catalogs,
     correctCount: doc.correctCount,
-    avgTimeMs: doc.avgTimeMs,
-    totalTimeMs: doc.totalTimeMs,
+    points: Math.max(0, Math.floor(doc.points ?? 0)),
+    instantHits: Math.max(0, Math.floor(doc.instantHits ?? 0)),
     highestDifficulty: doc.highestDifficulty,
     createdAt: doc.createdAt.toISOString(),
   };
@@ -51,23 +60,30 @@ export async function createRun(input: RunSubmitInput): Promise<RunResult> {
   if (input.correctCount < 0 || !Number.isFinite(input.correctCount)) {
     throw new Error("Invalid correctCount");
   }
-  if (input.totalTimeMs < 0 || !Number.isFinite(input.totalTimeMs)) {
-    throw new Error("Invalid totalTimeMs");
+  if (input.points < 0 || !Number.isFinite(input.points)) {
+    throw new Error("Invalid points");
+  }
+  if (input.instantHits < 0 || !Number.isFinite(input.instantHits)) {
+    throw new Error("Invalid instantHits");
   }
 
+  const catalogs = normalizeCatalogListOrDefault(input.catalogs);
   const correctCount = Math.floor(input.correctCount);
-  const totalTimeMs = Math.round(input.totalTimeMs);
-  const avgTimeMs =
-    correctCount > 0 ? Math.round(totalTimeMs / correctCount) : 0;
+  const points = Math.max(0, Math.floor(input.points));
+  const instantHits = Math.min(
+    correctCount,
+    Math.max(0, Math.floor(input.instantHits)),
+  );
 
   const col = await runsCollection();
   const now = new Date();
   const result = await col.insertOne({
     playerName,
-    catalog: input.catalog,
+    catalog: catalogs[0]!,
+    catalogs,
     correctCount,
-    avgTimeMs,
-    totalTimeMs,
+    points,
+    instantHits,
     highestDifficulty: input.highestDifficulty,
     createdAt: now,
   });
@@ -76,11 +92,11 @@ export async function createRun(input: RunSubmitInput): Promise<RunResult> {
   return toRunResult(doc);
 }
 
-export async function listRankings(limit = 50): Promise<RunResult[]> {
+export async function listRankings(limit = 100): Promise<RunResult[]> {
   const col = await runsCollection();
   const docs = await col
     .find({})
-    .sort({ correctCount: -1, avgTimeMs: 1, createdAt: 1 })
+    .sort({ points: -1, instantHits: -1, correctCount: -1, createdAt: 1 })
     .limit(Math.min(Math.max(limit, 1), 100))
     .toArray();
   return docs.map(toRunResult);

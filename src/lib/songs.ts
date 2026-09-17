@@ -32,11 +32,47 @@ export function resolveCatalog(
   return value === "vietnamese" ? "vietnamese" : "worldwide";
 }
 
+export function normalizeCatalogList(
+  values: Array<string | null | undefined> | null | undefined,
+): MusicCatalog[] {
+  const list = (values ?? [])
+    .filter((v): v is string => typeof v === "string" && v.length > 0)
+    .filter(isMusicCatalog);
+  return [...new Set(list)];
+}
+
+/** At least one catalog — defaults to Việt Nam. */
+export function normalizeCatalogListOrDefault(
+  values: Array<string | null | undefined> | null | undefined,
+): MusicCatalog[] {
+  const list = normalizeCatalogList(values);
+  return list.length > 0 ? list : ["vietnamese"];
+}
+
 function catalogQuery(catalog: MusicCatalog): Record<string, unknown> {
   if (catalog === "vietnamese") return { catalog: "vietnamese" };
   return {
-    $or: [{ catalog: "worldwide" }, { catalog: { $exists: false } }, { catalog: null }],
+    $or: [
+      { catalog: "worldwide" },
+      { catalog: { $exists: false } },
+      { catalog: null },
+    ],
   };
+}
+
+function catalogsFilterQuery(catalogs: MusicCatalog[]): Record<string, unknown> {
+  const unique = normalizeCatalogListOrDefault(catalogs);
+  if (unique.length === 1) return catalogQuery(unique[0]!);
+  const or: Record<string, unknown>[] = [];
+  if (unique.includes("vietnamese")) or.push({ catalog: "vietnamese" });
+  if (unique.includes("worldwide")) {
+    or.push(
+      { catalog: "worldwide" },
+      { catalog: { $exists: false } },
+      { catalog: null },
+    );
+  }
+  return { $or: or };
 }
 
 async function ensureIndexes(col: Collection<SongRecord>): Promise<void> {
@@ -130,9 +166,13 @@ function normalizeSongInput(song: Song): Song {
 
 export async function readSongs(filters?: {
   catalog?: MusicCatalog;
+  catalogs?: MusicCatalog[];
 }): Promise<Song[]> {
   const col = await songsCollection();
-  const query = filters?.catalog ? catalogQuery(filters.catalog) : {};
+  const catalogs =
+    filters?.catalogs ?? (filters?.catalog ? [filters.catalog] : undefined);
+  const list = catalogs ? normalizeCatalogListOrDefault(catalogs) : [];
+  const query = list.length > 0 ? catalogsFilterQuery(list) : {};
   const docs = await col.find(query).sort({ updatedAt: -1 }).toArray();
   return docs.map(toSong);
 }
@@ -194,20 +234,15 @@ export async function getSongById(id: string): Promise<AdminSong | null> {
 
 export async function getSongsByDifficulty(
   difficulty: Difficulty,
-  catalog: MusicCatalog = "worldwide",
+  catalogs: MusicCatalog | MusicCatalog[] = "worldwide",
 ): Promise<Song[]> {
   const col = await songsCollection();
-  const query =
-    catalog === "vietnamese"
-      ? { difficulty, catalog: "vietnamese" as const }
-      : {
-          difficulty,
-          $or: [
-            { catalog: "worldwide" as const },
-            { catalog: { $exists: false } },
-            { catalog: null },
-          ],
-        };
+  const list = normalizeCatalogListOrDefault(
+    Array.isArray(catalogs) ? catalogs : [catalogs],
+  );
+  const catalogPart = catalogsFilterQuery(list);
+  const query = { difficulty, ...catalogPart };
+  // When catalogPart has $or, spreading with difficulty is fine in MongoDB
   const matched = await col.find(query as Record<string, unknown>).toArray();
   return matched
     .map(toSong)

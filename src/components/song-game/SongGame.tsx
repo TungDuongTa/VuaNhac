@@ -9,6 +9,7 @@ import {
   PROGRESS_SPEED_FLOOR,
   RUN_META,
   nextDifficulty,
+  pointsForCorrectGuess,
   previousDifficulty,
 } from "@/src/lib/constants";
 import type {
@@ -19,7 +20,6 @@ import type {
   SongAnswer,
 } from "@/src/lib/types";
 import { readPlayerName, writePlayerName } from "@/src/lib/player-cookie";
-import Link from "next/link";
 import { CatalogPills } from "./CatalogPills";
 import { DifficultyPills } from "./DifficultyPills";
 import { DifficultySidebar } from "./DifficultySidebar";
@@ -40,7 +40,9 @@ import { playbackPlan } from "./utils";
 gsap.registerPlugin(useGSAP);
 
 export function SongGame() {
-  const [catalog, setCatalog] = useState<MusicCatalog>("vietnamese");
+  const [enabledCatalogs, setEnabledCatalogs] = useState<MusicCatalog[]>([
+    "vietnamese",
+  ]);
   const [difficulty, setDifficulty] = useState<Difficulty>("easy");
   const [status, setStatus] = useState<GameStatus>("loading");
   const [message, setMessage] = useState<string | null>(null);
@@ -67,7 +69,8 @@ export function SongGame() {
   const [runStartOpen, setRunStartOpen] = useState(false);
   const [runFinished, setRunFinished] = useState(false);
   const [runCorrectCount, setRunCorrectCount] = useState(0);
-  const [runTimesMs, setRunTimesMs] = useState<number[]>([]);
+  const [runInstantHits, setRunInstantHits] = useState(0);
+  const [runPoints, setRunPoints] = useState(0);
   const [runSubmitted, setRunSubmitted] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -83,7 +86,6 @@ export function SongGame() {
   const songIdRef = useRef<string | null>(null);
   /** Session-only: songs already shown per catalog+difficulty (for no-repeat rerolls). */
   const seenSongsRef = useRef<Map<string, Set<string>>>(new Map());
-  const roundStartedAtRef = useRef<number | null>(null);
   const roundRecordedRef = useRef<string | null>(null);
   const runActiveRef = useRef(false);
   const difficultyRef = useRef<Difficulty>(difficulty);
@@ -100,20 +102,12 @@ export function SongGame() {
   runActiveRef.current = runActive;
   difficultyRef.current = difficulty;
 
-  const runAvgTimeMs = useMemo(() => {
-    if (runTimesMs.length === 0) return 0;
-    return Math.round(
-      runTimesMs.reduce((sum, t) => sum + t, 0) / runTimesMs.length,
-    );
-  }, [runTimesMs]);
-
   useEffect(() => {
     setPlayerName(readPlayerName());
   }, []);
 
   useEffect(() => {
     if (status === "ready" && song?.id) {
-      roundStartedAtRef.current = performance.now();
       roundRecordedRef.current = null;
     }
   }, [status, song?.id]);
@@ -122,10 +116,6 @@ export function SongGame() {
     if (!runActive || status !== "won" || !song?.id) return;
     if (roundRecordedRef.current === song.id) return;
     roundRecordedRef.current = song.id;
-    const started = roundStartedAtRef.current;
-    const ms =
-      started != null ? Math.max(0, Math.round(performance.now() - started)) : 0;
-    setRunTimesMs((prev) => [...prev, ms]);
     setRunCorrectCount((c) => c + 1);
     lastClearedDifficultyRef.current = difficultyRef.current;
   }, [runActive, status, song?.id]);
@@ -259,9 +249,14 @@ export function SongGame() {
   }, [volume]);
 
   const loadSong = useCallback(
-    async (diff: Difficulty, opts?: { reroll?: boolean; catalog?: MusicCatalog }) => {
-      const activeCatalog = opts?.catalog ?? catalog;
-      const poolKey = `${activeCatalog}:${diff}`;
+    async (
+      diff: Difficulty,
+      opts?: { reroll?: boolean; catalogs?: MusicCatalog[] },
+    ) => {
+      const activeCatalogs = opts?.catalogs?.length
+        ? opts.catalogs
+        : enabledCatalogs;
+      const poolKey = `${[...activeCatalogs].sort().join("+")}:${diff}`;
       let seen = seenSongsRef.current.get(poolKey);
       if (!seen) {
         seen = new Set<string>();
@@ -280,11 +275,10 @@ export function SongGame() {
       try {
         const params = new URLSearchParams({
           difficulty: diff,
-          catalog: activeCatalog,
+          catalogs: activeCatalogs.join(","),
         });
         if (opts?.reroll) {
           params.set("reroll", "1");
-          // Current song counts as seen before picking the next one
           if (songIdRef.current) seen.add(songIdRef.current);
           if (seen.size > 0) {
             params.set("exclude", [...seen].join(","));
@@ -305,7 +299,6 @@ export function SongGame() {
           return;
         }
 
-        // Pool exhausted — start a fresh cycle of exclusions for this mode
         if (data.excludedReset) {
           seen.clear();
         }
@@ -322,12 +315,12 @@ export function SongGame() {
         setMessage("Network error loading song");
       }
     },
-    [catalog, resetPlayback],
+    [enabledCatalogs, resetPlayback],
   );
 
   useEffect(() => {
-    void loadSong(difficulty, { catalog, reroll: runActiveRef.current });
-  }, [difficulty, catalog, loadSong]);
+    void loadSong(difficulty, { catalogs: enabledCatalogs, reroll: true });
+  }, [difficulty, enabledCatalogs, loadSong]);
 
   useEffect(() => {
     return () => {
@@ -352,7 +345,7 @@ export function SongGame() {
       searchAbortRef.current = controller;
       try {
         const res = await fetch(
-          `/api/search?q=${encodeURIComponent(query)}&catalog=${catalog}`,
+          `/api/search?q=${encodeURIComponent(query)}&catalogs=${enabledCatalogs.join(",")}`,
           { signal: controller.signal },
         );
         if (!res.ok) return;
@@ -365,7 +358,7 @@ export function SongGame() {
     }, 200);
 
     return () => clearTimeout(handle);
-  }, [query, status, revealDismissed, catalog]);
+  }, [query, status, revealDismissed, enabledCatalogs]);
 
   useEffect(() => {
     const canInteract =
@@ -571,21 +564,20 @@ export function SongGame() {
       return;
     }
 
-    // Casual mode: load a new song for the current difficulty/catalog
+    // Casual mode: load a new song for the current difficulty/catalogs
     setRevealDismissed(true);
     setAnswer(null);
     setGuessedInSeconds(null);
     void loadSong(difficultyRef.current, {
-      catalog,
+      catalogs: enabledCatalogs,
       reroll: true,
     });
-  }, [pauseAudio, revealCanDismiss, status, loadSong, catalog]);
+  }, [pauseAudio, revealCanDismiss, status, loadSong, enabledCatalogs]);
 
   const submitRunScore = useCallback(
-    async (correctCount: number, times: number[]) => {
+    async (correctCount: number, points: number, instantHits: number) => {
       if (runSubmitted) return;
       setRunSubmitted(true);
-      const totalTimeMs = times.reduce((sum, t) => sum + t, 0);
       const highest =
         lastClearedDifficultyRef.current ??
         (correctCount > 0
@@ -597,9 +589,10 @@ export function SongGame() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             playerName,
-            catalog,
+            catalogs: enabledCatalogs,
             correctCount,
-            totalTimeMs,
+            points,
+            instantHits,
             highestDifficulty: highest,
           }),
         });
@@ -607,18 +600,19 @@ export function SongGame() {
         // Ranking save is best-effort; still show end dialog.
       }
     },
-    [catalog, playerName, runSubmitted],
+    [enabledCatalogs, playerName, runSubmitted],
   );
 
   useEffect(() => {
     if (!runActive || status !== "lost" || runSubmitted) return;
-    void submitRunScore(runCorrectCount, runTimesMs);
+    void submitRunScore(runCorrectCount, runPoints, runInstantHits);
   }, [
     runActive,
     status,
     runSubmitted,
     runCorrectCount,
-    runTimesMs,
+    runPoints,
+    runInstantHits,
     submitRunScore,
   ]);
 
@@ -631,23 +625,25 @@ export function SongGame() {
     setRunActive(true);
     setRunFinished(false);
     setRunCorrectCount(0);
-    setRunTimesMs([]);
+    setRunInstantHits(0);
+    setRunPoints(0);
     setRunSubmitted(false);
     lastClearedDifficultyRef.current = null;
     setRevealDismissed(false);
     setAnswer(null);
     setGuessedInSeconds(null);
     setDifficulty("easy");
-    void loadSong("easy", { reroll: true, catalog });
+    void loadSong("easy", { reroll: true, catalogs: enabledCatalogs });
   };
 
   const exitToCasual = () => {
     setRunActive(false);
     setRunFinished(false);
     setRunCorrectCount(0);
-    setRunTimesMs([]);
+    setRunInstantHits(0);
+    setRunPoints(0);
     setRunSubmitted(false);
-    void loadSong(difficulty, { catalog });
+    void loadSong(difficulty, { catalogs: enabledCatalogs, reroll: true });
   };
 
   const revealAnswer = async () => {
@@ -689,6 +685,14 @@ export function SongGame() {
     if (data.correct) {
       setAnswer(data.answer);
       setGuessedInSeconds(stageWhenGuessed);
+      if (runActiveRef.current) {
+        setRunPoints(
+          (p) => p + pointsForCorrectGuess(stageWhenGuessed, difficulty),
+        );
+        if (Math.abs(stageWhenGuessed - 0.1) < 0.001) {
+          setRunInstantHits((n) => n + 1);
+        }
+      }
       setStatus("won");
       return;
     }
@@ -740,7 +744,7 @@ export function SongGame() {
       setMessage(
         `Synced ${data.totalWithPreview} tracks with previews (${data.added} new, scanned ${data.scanned ?? "?"}).${warn}`,
       );
-      await loadSong(difficulty);
+      await loadSong(difficulty, { reroll: true });
     } catch {
       setMessage("Sync request failed");
     } finally {
@@ -821,15 +825,6 @@ export function SongGame() {
         VuaNhac
       </p>
 
-      <div className="absolute right-16 top-3 z-30 flex max-w-[calc(100%-8rem)] flex-wrap items-center justify-end gap-2 sm:top-3.5 lg:right-5">
-        <Link
-          href="/ranking"
-          className="rounded-full border border-white/15 bg-black/50 px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:border-white/30 hover:text-white"
-        >
-          Rankings
-        </Link>
-      </div>
-
       <MobileSettingsMenu
         open={menuOpen}
         onOpen={() => setMenuOpen(true)}
@@ -848,7 +843,8 @@ export function SongGame() {
         open={runFinished}
         playerName={playerName}
         correctCount={runCorrectCount}
-        avgTimeMs={runAvgTimeMs}
+        points={runPoints}
+        instantHits={runInstantHits}
         onPlayAgain={() => beginRun(playerName || readPlayerName())}
         onCasual={exitToCasual}
       />
@@ -914,12 +910,24 @@ export function SongGame() {
                   <div className="flex items-center gap-3 rounded-full border border-white/15 bg-black/30 px-4 py-1.5 text-xs font-semibold text-zinc-200">
                     <span>Run · {playerName || "Player"}</span>
                     <span className="text-white/30">|</span>
-                    <span>{runCorrectCount} correct</span>
+                    <span>{runPoints} pts</span>
+                    <span className="text-white/30">|</span>
+                    <span>
+                      {runCorrectCount} win{runCorrectCount === 1 ? "" : "s"}
+                    </span>
                   </div>
                 )}
                 <CatalogPills
-                  catalog={catalog}
-                  onCatalogChange={setCatalog}
+                  enabledCatalogs={enabledCatalogs}
+                  onToggleCatalog={(c) => {
+                    setEnabledCatalogs((prev) => {
+                      if (prev.includes(c)) {
+                        if (prev.length <= 1) return prev;
+                        return prev.filter((x) => x !== c);
+                      }
+                      return [...prev, c];
+                    });
+                  }}
                   disabled={runActive}
                 />
                 <DifficultyPills

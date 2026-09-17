@@ -21,7 +21,7 @@ function isDifficulty(value: unknown): value is Difficulty {
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const limit = Number(searchParams.get("limit") ?? "50") || 50;
+  const limit = Number(searchParams.get("limit") ?? "100") || 100;
   try {
     const runs = await listRankings(limit);
     return NextResponse.json({ runs });
@@ -36,8 +36,10 @@ export async function POST(request: Request) {
   let body: {
     playerName?: string;
     catalog?: string;
+    catalogs?: string[];
     correctCount?: number;
-    totalTimeMs?: number;
+    points?: number;
+    instantHits?: number;
     highestDifficulty?: string;
   };
   try {
@@ -52,8 +54,15 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  if (!isCatalog(body.catalog)) {
-    return NextResponse.json({ error: "Invalid catalog" }, { status: 400 });
+
+  const catalogsRaw = Array.isArray(body.catalogs)
+    ? body.catalogs
+    : body.catalog
+      ? [body.catalog]
+      : [];
+  const catalogs = catalogsRaw.filter(isCatalog);
+  if (catalogs.length === 0) {
+    return NextResponse.json({ error: "Invalid catalogs" }, { status: 400 });
   }
   if (!isDifficulty(body.highestDifficulty)) {
     return NextResponse.json(
@@ -63,7 +72,8 @@ export async function POST(request: Request) {
   }
   if (
     typeof body.correctCount !== "number" ||
-    typeof body.totalTimeMs !== "number"
+    typeof body.points !== "number" ||
+    typeof body.instantHits !== "number"
   ) {
     return NextResponse.json({ error: "Missing score fields" }, { status: 400 });
   }
@@ -71,9 +81,10 @@ export async function POST(request: Request) {
   try {
     const run = await createRun({
       playerName: body.playerName,
-      catalog: body.catalog,
+      catalogs,
       correctCount: body.correctCount,
-      totalTimeMs: body.totalTimeMs,
+      points: body.points,
+      instantHits: body.instantHits,
       highestDifficulty: body.highestDifficulty,
     });
     return NextResponse.json({ run }, { status: 201 });

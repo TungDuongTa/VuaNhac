@@ -7,25 +7,18 @@ type Props = {
   open: boolean;
   playerName: string;
   correctCount: number;
-  avgTimeMs: number;
+  points: number;
+  instantHits: number;
   onPlayAgain: () => void;
   onCasual: () => void;
 };
-
-function formatAvg(ms: number): string {
-  if (!ms || ms <= 0) return "—";
-  const seconds = ms / 1000;
-  if (seconds < 60) return `${seconds.toFixed(1)}s`;
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}m ${s.toFixed(0)}s`;
-}
 
 export function RunEndDialog({
   open,
   playerName,
   correctCount,
-  avgTimeMs,
+  points,
+  instantHits,
   onPlayAgain,
   onCasual,
 }: Props) {
@@ -48,20 +41,24 @@ export function RunEndDialog({
         <p className="mt-2 text-sm text-zinc-400">
           Nice try, <span className="text-white">{playerName}</span>.
         </p>
-        <div className="mt-5 grid grid-cols-2 gap-3">
-          <div className="rounded-xl bg-white/5 px-4 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-              Correct
+        <div className="mt-5 grid grid-cols-3 gap-2">
+          <div className="rounded-xl bg-white/5 px-3 py-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+              Points
             </p>
-            <p className="mt-1 text-2xl font-bold text-white">{correctCount}</p>
+            <p className="mt-1 text-xl font-bold text-white">{points}</p>
           </div>
-          <div className="rounded-xl bg-white/5 px-4 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-              Avg time
+          <div className="rounded-xl bg-white/5 px-3 py-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+              Win
             </p>
-            <p className="mt-1 text-2xl font-bold text-white">
-              {formatAvg(avgTimeMs)}
+            <p className="mt-1 text-xl font-bold text-white">{correctCount}</p>
+          </div>
+          <div className="rounded-xl bg-white/5 px-3 py-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+              0.1s
             </p>
+            <p className="mt-1 text-xl font-bold text-white">{instantHits}</p>
           </div>
         </div>
         <div className="mt-5 flex flex-col gap-2">

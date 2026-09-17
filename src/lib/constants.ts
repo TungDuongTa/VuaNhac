@@ -29,22 +29,33 @@ export const CATALOG_META: Record<
     shortLabel: string;
     color: string;
     activeBg: string;
+    /** Soft tint when used as a badge / secondary */
     idleBg: string;
+    /** Clearly off / disabled look */
+    offBg: string;
+    offColor: string;
+    offBorder: string;
   }
 > = {
   vietnamese: {
     label: "Việt Nam",
     shortLabel: "VN",
-    color: "#fb7185",
+    color: "#ffe4e6",
     activeBg: "#e11d48",
-    idleBg: "rgba(225, 29, 72, 0.16)",
+    idleBg: "rgba(225, 29, 72, 0.18)",
+    offBg: "rgba(255, 255, 255, 0.04)",
+    offColor: "#52525b",
+    offBorder: "rgba(255, 255, 255, 0.08)",
   },
   worldwide: {
     label: "Worldwide",
     shortLabel: "World",
-    color: "#38bdf8",
-    activeBg: "#0ea5e9",
-    idleBg: "rgba(14, 165, 233, 0.16)",
+    color: "#e0f2fe",
+    activeBg: "#0284c7",
+    idleBg: "rgba(2, 132, 199, 0.18)",
+    offBg: "rgba(255, 255, 255, 0.04)",
+    offColor: "#52525b",
+    offBorder: "rgba(255, 255, 255, 0.08)",
   },
 };
 
@@ -119,6 +130,48 @@ export const PROGRESS_SPEED_FLOOR = 8;
 
 /** All stage chips shown in settings (toggle to include). */
 export const STAGE_OPTIONS = [0.01, 0.1, 0.5, 2, 4, 8, 15] as const;
+
+/**
+ * Run points by clip length when the song is guessed correctly.
+ * Shorter hear-time = higher score.
+ */
+export const RUN_POINTS_BY_DURATION: Record<number, number> = {
+  0.01: 200,
+  0.1: 150,
+  0.5: 90,
+  2: 80,
+  4: 70,
+  8: 60,
+  15: 50,
+};
+
+/** Multiplier applied on top of clip points (harder = more). */
+export const RUN_DIFFICULTY_MULTIPLIER: Record<Difficulty, number> = {
+  easy: 1,
+  medium: 1.25,
+  hard: 1.5,
+  expert: 1.85,
+  impossible: 2.25,
+};
+
+/** Base points for a correct guess at the given clip length (seconds). */
+export function basePointsForGuessDuration(seconds: number): number {
+  for (const [key, pts] of Object.entries(RUN_POINTS_BY_DURATION)) {
+    if (Math.abs(Number(key) - seconds) < 0.001) return pts;
+  }
+  if (!Number.isFinite(seconds) || seconds <= 0) return 5;
+  return Math.max(5, Math.round(25 / Math.sqrt(seconds)));
+}
+
+/** Final run points: clip length × difficulty. */
+export function pointsForCorrectGuess(
+  seconds: number,
+  difficulty: Difficulty,
+): number {
+  const base = basePointsForGuessDuration(seconds);
+  const mult = RUN_DIFFICULTY_MULTIPLIER[difficulty] ?? 1;
+  return Math.max(1, Math.round(base * mult));
+}
 
 export const ACCENT = "#1ed760";
 export const PANEL_IDLE = "#2a2a2a";
