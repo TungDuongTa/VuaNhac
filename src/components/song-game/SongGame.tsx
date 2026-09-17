@@ -7,6 +7,9 @@ import {
   DIFFICULTY_META,
   GUESS_DURATIONS,
   PROGRESS_SPEED_FLOOR,
+  RUN_META,
+  nextDifficulty,
+  previousDifficulty,
 } from "@/src/lib/constants";
 import type {
   Difficulty,
@@ -15,6 +18,8 @@ import type {
   SearchResult,
   SongAnswer,
 } from "@/src/lib/types";
+import { readPlayerName, writePlayerName } from "@/src/lib/player-cookie";
+import Link from "next/link";
 import { CatalogPills } from "./CatalogPills";
 import { DifficultyPills } from "./DifficultyPills";
 import { DifficultySidebar } from "./DifficultySidebar";
@@ -25,6 +30,8 @@ import { MobileSettingsMenu } from "./MobileSettingsMenu";
 import { PlayControls } from "./PlayControls";
 import { ProgressBar } from "./ProgressBar";
 import { ResultReveal } from "./ResultReveal";
+import { RunEndDialog } from "./RunEndDialog";
+import { RunStartDialog } from "./RunStartDialog";
 import { SettingsSidebar } from "./SettingsSidebar";
 import { SetupErrorPanel } from "./SetupErrorPanel";
 import type { GameStatus, SongStartMode } from "./types";
@@ -55,6 +62,14 @@ export function SongGame() {
   const [revealDismissed, setRevealDismissed] = useState(false);
   const [revealCanDismiss, setRevealCanDismiss] = useState(false);
 
+  const [playerName, setPlayerName] = useState("");
+  const [runActive, setRunActive] = useState(false);
+  const [runStartOpen, setRunStartOpen] = useState(false);
+  const [runFinished, setRunFinished] = useState(false);
+  const [runCorrectCount, setRunCorrectCount] = useState(0);
+  const [runTimesMs, setRunTimesMs] = useState<number[]>([]);
+  const [runSubmitted, setRunSubmitted] = useState(false);
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const stopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
@@ -66,6 +81,13 @@ export function SongGame() {
   const confettiCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const searchBarRef = useRef<HTMLDivElement | null>(null);
   const songIdRef = useRef<string | null>(null);
+  /** Session-only: songs already shown per catalog+difficulty (for no-repeat rerolls). */
+  const seenSongsRef = useRef<Map<string, Set<string>>>(new Map());
+  const roundStartedAtRef = useRef<number | null>(null);
+  const roundRecordedRef = useRef<string | null>(null);
+  const runActiveRef = useRef(false);
+  const difficultyRef = useRef<Difficulty>(difficulty);
+  const lastClearedDifficultyRef = useRef<Difficulty | null>(null);
 
   const orderedStages = useMemo(
     () => [...stages].sort((a, b) => a - b),
@@ -75,6 +97,38 @@ export function SongGame() {
   const currentDuration =
     orderedStages[Math.min(guessIndex, Math.max(maxGuesses - 1, 0))] ?? 0.1;
   const meta = DIFFICULTY_META[difficulty];
+  runActiveRef.current = runActive;
+  difficultyRef.current = difficulty;
+
+  const runAvgTimeMs = useMemo(() => {
+    if (runTimesMs.length === 0) return 0;
+    return Math.round(
+      runTimesMs.reduce((sum, t) => sum + t, 0) / runTimesMs.length,
+    );
+  }, [runTimesMs]);
+
+  useEffect(() => {
+    setPlayerName(readPlayerName());
+  }, []);
+
+  useEffect(() => {
+    if (status === "ready" && song?.id) {
+      roundStartedAtRef.current = performance.now();
+      roundRecordedRef.current = null;
+    }
+  }, [status, song?.id]);
+
+  useEffect(() => {
+    if (!runActive || status !== "won" || !song?.id) return;
+    if (roundRecordedRef.current === song.id) return;
+    roundRecordedRef.current = song.id;
+    const started = roundStartedAtRef.current;
+    const ms =
+      started != null ? Math.max(0, Math.round(performance.now() - started)) : 0;
+    setRunTimesMs((prev) => [...prev, ms]);
+    setRunCorrectCount((c) => c + 1);
+    lastClearedDifficultyRef.current = difficultyRef.current;
+  }, [runActive, status, song?.id]);
 
   const [layoutDomain, setLayoutDomain] = useState(PROGRESS_SPEED_FLOOR);
   const layoutDomainProxy = useRef({ value: PROGRESS_SPEED_FLOOR });
@@ -207,6 +261,13 @@ export function SongGame() {
   const loadSong = useCallback(
     async (diff: Difficulty, opts?: { reroll?: boolean; catalog?: MusicCatalog }) => {
       const activeCatalog = opts?.catalog ?? catalog;
+      const poolKey = `${activeCatalog}:${diff}`;
+      let seen = seenSongsRef.current.get(poolKey);
+      if (!seen) {
+        seen = new Set<string>();
+        seenSongsRef.current.set(poolKey, seen);
+      }
+
       setMessage(null);
       setGuessIndex(0);
       setAnswer(null);
@@ -223,7 +284,11 @@ export function SongGame() {
         });
         if (opts?.reroll) {
           params.set("reroll", "1");
-          if (songIdRef.current) params.set("exclude", songIdRef.current);
+          // Current song counts as seen before picking the next one
+          if (songIdRef.current) seen.add(songIdRef.current);
+          if (seen.size > 0) {
+            params.set("exclude", [...seen].join(","));
+          }
         }
         const res = await fetch(`/api/song?${params}`);
         const data = await res.json();
@@ -240,8 +305,15 @@ export function SongGame() {
           return;
         }
 
+        // Pool exhausted — start a fresh cycle of exclusions for this mode
+        if (data.excludedReset) {
+          seen.clear();
+        }
+
+        const nextId = data.song?.id ?? null;
         setSong(data.song);
-        songIdRef.current = data.song?.id ?? null;
+        songIdRef.current = nextId;
+        if (nextId) seen.add(nextId);
         setStatus("ready");
       } catch {
         setSong(null);
@@ -254,7 +326,7 @@ export function SongGame() {
   );
 
   useEffect(() => {
-    void loadSong(difficulty, { catalog });
+    void loadSong(difficulty, { catalog, reroll: runActiveRef.current });
   }, [difficulty, catalog, loadSong]);
 
   useEffect(() => {
@@ -476,14 +548,107 @@ export function SongGame() {
 
   const dismissReveal = useCallback(() => {
     if (!revealCanDismiss) return;
-    setRevealDismissed(true);
+
     pauseAudio();
     const panel = panelRef.current;
     if (panel) {
       panel.classList.remove("is-shaking");
       panel.style.removeProperty("--lost-wash-opacity");
     }
-  }, [pauseAudio, revealCanDismiss]);
+
+    if (runActiveRef.current && status === "won") {
+      const next = nextDifficulty(difficultyRef.current);
+      setRevealDismissed(true);
+      setAnswer(null);
+      setGuessedInSeconds(null);
+      setDifficulty(next);
+      return;
+    }
+
+    if (runActiveRef.current && status === "lost") {
+      setRevealDismissed(true);
+      setRunFinished(true);
+      return;
+    }
+
+    // Casual mode: load a new song for the current difficulty/catalog
+    setRevealDismissed(true);
+    setAnswer(null);
+    setGuessedInSeconds(null);
+    void loadSong(difficultyRef.current, {
+      catalog,
+      reroll: true,
+    });
+  }, [pauseAudio, revealCanDismiss, status, loadSong, catalog]);
+
+  const submitRunScore = useCallback(
+    async (correctCount: number, times: number[]) => {
+      if (runSubmitted) return;
+      setRunSubmitted(true);
+      const totalTimeMs = times.reduce((sum, t) => sum + t, 0);
+      const highest =
+        lastClearedDifficultyRef.current ??
+        (correctCount > 0
+          ? previousDifficulty(difficultyRef.current)
+          : "easy");
+      try {
+        await fetch("/api/runs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            playerName,
+            catalog,
+            correctCount,
+            totalTimeMs,
+            highestDifficulty: highest,
+          }),
+        });
+      } catch {
+        // Ranking save is best-effort; still show end dialog.
+      }
+    },
+    [catalog, playerName, runSubmitted],
+  );
+
+  useEffect(() => {
+    if (!runActive || status !== "lost" || runSubmitted) return;
+    void submitRunScore(runCorrectCount, runTimesMs);
+  }, [
+    runActive,
+    status,
+    runSubmitted,
+    runCorrectCount,
+    runTimesMs,
+    submitRunScore,
+  ]);
+
+  const beginRun = (name: string) => {
+    const cleaned = name.trim().slice(0, 24);
+    if (!cleaned) return;
+    writePlayerName(cleaned);
+    setPlayerName(cleaned);
+    setRunStartOpen(false);
+    setRunActive(true);
+    setRunFinished(false);
+    setRunCorrectCount(0);
+    setRunTimesMs([]);
+    setRunSubmitted(false);
+    lastClearedDifficultyRef.current = null;
+    setRevealDismissed(false);
+    setAnswer(null);
+    setGuessedInSeconds(null);
+    setDifficulty("easy");
+    void loadSong("easy", { reroll: true, catalog });
+  };
+
+  const exitToCasual = () => {
+    setRunActive(false);
+    setRunFinished(false);
+    setRunCorrectCount(0);
+    setRunTimesMs([]);
+    setRunSubmitted(false);
+    void loadSong(difficulty, { catalog });
+  };
 
   const revealAnswer = async () => {
     if (!song) return;
@@ -656,11 +821,36 @@ export function SongGame() {
         VuaNhac
       </p>
 
+      <div className="absolute right-16 top-3 z-30 flex max-w-[calc(100%-8rem)] flex-wrap items-center justify-end gap-2 sm:top-3.5 lg:right-5">
+        <Link
+          href="/ranking"
+          className="rounded-full border border-white/15 bg-black/50 px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:border-white/30 hover:text-white"
+        >
+          Rankings
+        </Link>
+      </div>
+
       <MobileSettingsMenu
         open={menuOpen}
         onOpen={() => setMenuOpen(true)}
         onClose={() => setMenuOpen(false)}
         {...settingsProps}
+      />
+
+      <RunStartDialog
+        open={runStartOpen}
+        initialName={playerName}
+        onClose={() => setRunStartOpen(false)}
+        onStart={beginRun}
+      />
+
+      <RunEndDialog
+        open={runFinished}
+        playerName={playerName}
+        correctCount={runCorrectCount}
+        avgTimeMs={runAvgTimeMs}
+        onPlayAgain={() => beginRun(playerName || readPlayerName())}
+        onCasual={exitToCasual}
       />
 
       <div className="relative z-10 mx-auto grid min-h-dvh w-full max-w-[1400px] flex-1 grid-cols-1 px-0 pb-0 pt-0 lg:grid-cols-[minmax(0,1fr)_440px_minmax(0,1fr)] lg:items-stretch lg:px-6 lg:pb-8 lg:pt-8">
@@ -669,6 +859,10 @@ export function SongGame() {
           status={status}
           onDifficultyChange={setDifficulty}
           onReroll={() => void loadSong(difficulty, { reroll: true })}
+          runLocked={runActive}
+          runActive={runActive}
+          onStartRun={() => setRunStartOpen(true)}
+          onEndRun={exitToCasual}
         />
 
         <section
@@ -716,10 +910,22 @@ export function SongGame() {
           <div className="flex w-full flex-col items-center gap-8 sm:gap-10">
             {!showingReveal && status !== "setup" && status !== "error" && (
               <div className="flex w-full flex-col items-center gap-3">
-                <CatalogPills catalog={catalog} onCatalogChange={setCatalog} />
+                {runActive && (
+                  <div className="flex items-center gap-3 rounded-full border border-white/15 bg-black/30 px-4 py-1.5 text-xs font-semibold text-zinc-200">
+                    <span>Run · {playerName || "Player"}</span>
+                    <span className="text-white/30">|</span>
+                    <span>{runCorrectCount} correct</span>
+                  </div>
+                )}
+                <CatalogPills
+                  catalog={catalog}
+                  onCatalogChange={setCatalog}
+                  disabled={runActive}
+                />
                 <DifficultyPills
                   difficulty={difficulty}
                   onDifficultyChange={setDifficulty}
+                  disabled={runActive}
                 />
               </div>
             )}
@@ -774,7 +980,11 @@ export function SongGame() {
                       revealCanDismiss ? "text-white/45" : "text-transparent"
                     }`}
                   >
-                    Tap anywhere to continue
+                    {runActive && status === "won"
+                      ? "Tap for next difficulty"
+                      : runActive && status === "lost"
+                        ? "Tap to see your score"
+                        : "Tap for next song"}
                   </p>
                 </div>
               )}
@@ -802,7 +1012,7 @@ export function SongGame() {
               />
             )}
 
-            {(showingBoard || status === "loading") && (
+            {(showingBoard || status === "loading") && !runActive && (
               <button
                 type="button"
                 onClick={(e) => {
@@ -815,6 +1025,40 @@ export function SongGame() {
                 <RerollIcon />
                 Reroll
               </button>
+            )}
+
+            {!showingReveal && status !== "setup" && status !== "error" && (
+              <div
+                className="flex w-full max-w-xs flex-col gap-2 lg:hidden"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {runActive ? (
+                  <button
+                    type="button"
+                    onClick={exitToCasual}
+                    className="w-full rounded-full py-2.5 text-sm font-semibold transition hover:brightness-110"
+                    style={{
+                      backgroundColor: RUN_META.endBg,
+                      border: `1px solid ${RUN_META.endBorder}`,
+                      color: RUN_META.endColor,
+                    }}
+                  >
+                    End run
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setRunStartOpen(true)}
+                    className="w-full rounded-full py-2.5 text-sm font-semibold transition hover:brightness-110"
+                    style={{
+                      backgroundColor: RUN_META.startBg,
+                      color: RUN_META.startText,
+                    }}
+                  >
+                    Start a run
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </section>

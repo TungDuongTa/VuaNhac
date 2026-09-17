@@ -34,7 +34,7 @@ export async function GET(request: Request) {
     })
     .filter((x) => x.score > 0)
     .sort((a, b) => b.score - a.score)
-    .slice(0, 12);
+    .slice(0, 30);
 
   const seen = new Set<string>();
   const results: SearchResult[] = [];

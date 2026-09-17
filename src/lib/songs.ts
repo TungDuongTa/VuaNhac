@@ -2,6 +2,7 @@ import { ObjectId, type Collection, type WithId } from "mongodb";
 import { getDb } from "./mongodb";
 import type { Difficulty, MusicCatalog, Song } from "./types";
 import { MUSIC_CATALOGS } from "./constants";
+import { normalizeVietnamese } from "./vietnamese";
 
 export type SongRecord = Song & {
   createdAt: Date;
@@ -140,25 +141,48 @@ export async function listAdminSongs(filters?: {
   difficulty?: Difficulty;
   catalog?: MusicCatalog;
   q?: string;
-}): Promise<AdminSong[]> {
+  page?: number;
+  pageSize?: number;
+}): Promise<{
+  songs: AdminSong[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}> {
   const col = await songsCollection();
   const clauses: Record<string, unknown>[] = [];
   if (filters?.difficulty) clauses.push({ difficulty: filters.difficulty });
   if (filters?.catalog) clauses.push(catalogQuery(filters.catalog));
-  if (filters?.q?.trim()) {
-    const re = { $regex: filters.q.trim(), $options: "i" };
-    clauses.push({
-      $or: [{ title: re }, { artist: re }, { album: re }, { spotifyId: re }],
-    });
-  }
   const query =
     clauses.length === 0
       ? {}
       : clauses.length === 1
         ? clauses[0]!
         : { $and: clauses };
-  const docs = await col.find(query).sort({ updatedAt: -1 }).toArray();
-  return docs.map(toAdminSong);
+  let docs = await col.find(query).sort({ updatedAt: -1 }).toArray();
+
+  // Accent-insensitive filter (e.g. "son tung" → Sơn Tùng)
+  const needle = filters?.q?.trim()
+    ? normalizeVietnamese(filters.q)
+    : "";
+  if (needle) {
+    docs = docs.filter((doc) => {
+      const hay = normalizeVietnamese(
+        [doc.title, doc.artist, doc.album ?? "", doc.spotifyId].join(" "),
+      );
+      return hay.includes(needle);
+    });
+  }
+
+  const total = docs.length;
+  const pageSize = Math.min(Math.max(filters?.pageSize ?? 30, 1), 100);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize) || 1);
+  const page = Math.min(Math.max(filters?.page ?? 1, 1), totalPages);
+  const start = (page - 1) * pageSize;
+  const songs = docs.slice(start, start + pageSize).map(toAdminSong);
+
+  return { songs, total, page, pageSize, totalPages };
 }
 
 export async function getSongById(id: string): Promise<AdminSong | null> {
@@ -179,12 +203,12 @@ export async function getSongsByDifficulty(
       : {
           difficulty,
           $or: [
-            { catalog: "worldwide" },
+            { catalog: "worldwide" as const },
             { catalog: { $exists: false } },
             { catalog: null },
           ],
         };
-  const matched = await col.find(query).toArray();
+  const matched = await col.find(query as Record<string, unknown>).toArray();
   return matched
     .map(toSong)
     .filter((s) => Boolean(s.hostedUrl || s.previewUrl));

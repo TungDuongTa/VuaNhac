@@ -39,9 +39,9 @@ export function PlayControls({
         className="flex h-28 w-28 items-center justify-center rounded-full text-black transition hover:scale-105 active:scale-95 disabled:opacity-40 sm:h-32 sm:w-32"
         style={{
           backgroundColor: accent,
-          boxShadow: `0 0 48px ${accent}55`,
+          boxShadow: playing ? `0 0 48px ${accent}55` : "none",
         }}
-        aria-label="Play clip"
+        aria-label={playing ? "Pause clip" : "Play clip"}
       >
         {playing ? (
           <span className="flex gap-2">

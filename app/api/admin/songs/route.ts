@@ -25,6 +25,11 @@ export async function GET(request: Request) {
   const difficultyParam = searchParams.get("difficulty");
   const catalogParam = searchParams.get("catalog");
   const q = searchParams.get("q") ?? undefined;
+  const page = Math.max(1, Number(searchParams.get("page") ?? "1") || 1);
+  const pageSize = Math.min(
+    100,
+    Math.max(1, Number(searchParams.get("pageSize") ?? "30") || 30),
+  );
   const difficulty =
     difficultyParam && isDifficulty(difficultyParam)
       ? difficultyParam
@@ -32,8 +37,14 @@ export async function GET(request: Request) {
   const catalog =
     catalogParam && isMusicCatalog(catalogParam) ? catalogParam : undefined;
 
-  const songs = await listAdminSongs({ difficulty, catalog, q });
-  return NextResponse.json({ songs });
+  const result = await listAdminSongs({
+    difficulty,
+    catalog,
+    q,
+    page,
+    pageSize,
+  });
+  return NextResponse.json(result);
 }
 
 export async function POST(request: Request) {

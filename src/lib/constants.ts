@@ -8,15 +8,54 @@ export const DIFFICULTIES: Difficulty[] = [
   "impossible",
 ];
 
+export function nextDifficulty(current: Difficulty): Difficulty {
+  const index = DIFFICULTIES.indexOf(current);
+  if (index < 0) return "easy";
+  return DIFFICULTIES[(index + 1) % DIFFICULTIES.length]!;
+}
+
+export function previousDifficulty(current: Difficulty): Difficulty {
+  const index = DIFFICULTIES.indexOf(current);
+  if (index < 0) return "easy";
+  return DIFFICULTIES[(index - 1 + DIFFICULTIES.length) % DIFFICULTIES.length]!;
+}
+
 export const MUSIC_CATALOGS: MusicCatalog[] = ["vietnamese", "worldwide"];
 
 export const CATALOG_META: Record<
   MusicCatalog,
-  { label: string; shortLabel: string }
+  {
+    label: string;
+    shortLabel: string;
+    color: string;
+    activeBg: string;
+    idleBg: string;
+  }
 > = {
-  vietnamese: { label: "Việt Nam", shortLabel: "VN" },
-  worldwide: { label: "Worldwide", shortLabel: "World" },
+  vietnamese: {
+    label: "Việt Nam",
+    shortLabel: "VN",
+    color: "#fb7185",
+    activeBg: "#e11d48",
+    idleBg: "rgba(225, 29, 72, 0.16)",
+  },
+  worldwide: {
+    label: "Worldwide",
+    shortLabel: "World",
+    color: "#38bdf8",
+    activeBg: "#0ea5e9",
+    idleBg: "rgba(14, 165, 233, 0.16)",
+  },
 };
+
+export const RUN_META = {
+  startBg: "#1ed760",
+  startText: "#0a0a0a",
+  startHover: "#17c653",
+  endColor: "#f87171",
+  endBorder: "rgba(248, 113, 113, 0.35)",
+  endBg: "rgba(248, 113, 113, 0.12)",
+} as const;
 
 export const DIFFICULTY_META: Record<
   Difficulty,

@@ -52,22 +52,31 @@ export async function GET(request: Request) {
   }
 
   const dateKey = todayKey();
-  const excludeId = searchParams.get("exclude")?.trim() || null;
+  const excludeRaw = searchParams.get("exclude")?.trim() ?? "";
+  const excludeIds = new Set(
+    excludeRaw
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean),
+  );
   const random =
     searchParams.get("random") === "1" || searchParams.get("reroll") === "1";
 
   let index = dailyIndex(dateKey, difficultyParam, pool.length, catalog);
+  let excludedReset = false;
+
   if (random) {
-    if (pool.length === 1) {
-      index = 0;
-    } else {
-      const candidates = pool
-        .map((s, i) => ({ s, i }))
-        .filter(({ s }) => !excludeId || s.spotifyId !== excludeId);
-      const pick =
-        candidates.length > 0 ? candidates : pool.map((s, i) => ({ s, i }));
-      index = pick[Math.floor(Math.random() * pick.length)]!.i;
+    let candidates = pool
+      .map((s, i) => ({ s, i }))
+      .filter(({ s }) => !excludeIds.has(s.spotifyId));
+
+    // All songs in this pool were already seen this session — recycle the full pool.
+    if (candidates.length === 0) {
+      candidates = pool.map((s, i) => ({ s, i }));
+      excludedReset = true;
     }
+
+    index = candidates[Math.floor(Math.random() * candidates.length)]!.i;
   }
   let song = pool[index]!;
 
@@ -125,5 +134,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     date: dateKey,
     song: payload,
+    poolSize: pool.length,
+    excludedReset,
   });
 }

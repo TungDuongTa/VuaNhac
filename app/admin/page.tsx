@@ -1,9 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { CATALOG_META, DIFFICULTIES, DIFFICULTY_META, MUSIC_CATALOGS } from "@/src/lib/constants";
+import {
+  CATALOG_META,
+  DIFFICULTIES,
+  DIFFICULTY_META,
+  MUSIC_CATALOGS,
+} from "@/src/lib/constants";
 import type { Difficulty, MusicCatalog } from "@/src/lib/types";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 
 type AdminSong = {
   id: string;
@@ -48,6 +62,35 @@ const EMPTY_FORM: SongForm = {
 };
 
 const SECRET_KEY = "heardit-admin-secret";
+const PAGE_SIZE = 30;
+
+function buildPageItems(
+  current: number,
+  total: number,
+): Array<number | "ellipsis"> {
+  if (total <= 1) return total === 1 ? [1] : [];
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+
+  const pages = new Set<number>();
+  pages.add(1);
+  pages.add(total);
+  for (let i = current - 1; i <= current + 1; i += 1) {
+    if (i >= 1 && i <= total) pages.add(i);
+  }
+
+  const sorted = [...pages].sort((a, b) => a - b);
+  const items: Array<number | "ellipsis"> = [];
+  for (let i = 0; i < sorted.length; i += 1) {
+    const pageNum = sorted[i]!;
+    if (i > 0 && pageNum - sorted[i - 1]! > 1) {
+      items.push("ellipsis");
+    }
+    items.push(pageNum);
+  }
+  return items;
+}
 
 function adminHeaders(secret: string, json = true): HeadersInit {
   const headers: Record<string, string> = {};
@@ -69,6 +112,9 @@ export default function AdminPage() {
     "all",
   );
   const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [form, setForm] = useState<SongForm>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -76,6 +122,7 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [loadingList, setLoadingList] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const verifySecret = useCallback(async (value: string) => {
     const trimmed = value.trim();
@@ -123,6 +170,8 @@ export default function AdminPage() {
   const loadSongs = useCallback(async () => {
     if (!verified || !secret) {
       setSongs([]);
+      setTotal(0);
+      setTotalPages(1);
       return;
     }
     setLoadingList(true);
@@ -133,6 +182,8 @@ export default function AdminPage() {
         params.set("difficulty", filterDifficulty);
       if (filterCatalog !== "all") params.set("catalog", filterCatalog);
       if (query.trim()) params.set("q", query.trim());
+      params.set("page", String(page));
+      params.set("pageSize", String(PAGE_SIZE));
       const res = await fetch(`/api/admin/songs?${params}`, {
         headers: adminHeaders(secret, false),
       });
@@ -146,12 +197,19 @@ export default function AdminPage() {
         throw new Error(data.error || "Failed to load songs");
       }
       setSongs(data.songs ?? []);
+      setTotal(typeof data.total === "number" ? data.total : 0);
+      setTotalPages(
+        typeof data.totalPages === "number" ? data.totalPages : 1,
+      );
+      if (typeof data.page === "number" && data.page !== page) {
+        setPage(data.page);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load songs");
     } finally {
       setLoadingList(false);
     }
-  }, [filterDifficulty, filterCatalog, query, secret, verified]);
+  }, [filterDifficulty, filterCatalog, query, page, secret, verified]);
 
   useEffect(() => {
     void loadSongs();
@@ -165,10 +223,15 @@ export default function AdminPage() {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
+  const clearFile = () => {
+    setFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   const resetForm = () => {
     setForm(EMPTY_FORM);
     setEditingId(null);
-    setFile(null);
+    clearFile();
   };
 
   const lockAdmin = () => {
@@ -291,7 +354,7 @@ export default function AdminPage() {
       catalog: song.catalog ?? "worldwide",
       hostedUrl: song.hostedUrl ?? "",
     });
-    setFile(null);
+    clearFile();
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -324,8 +387,21 @@ export default function AdminPage() {
 
   const filteredLabel = useMemo(() => {
     if (loadingList) return "Loading…";
-    return `${songs.length} song${songs.length === 1 ? "" : "s"}`;
-  }, [loadingList, songs.length]);
+    if (total === 0) return "0 songs";
+    const from = (page - 1) * PAGE_SIZE + 1;
+    const to = Math.min(page * PAGE_SIZE, total);
+    return `${from}–${to} of ${total}`;
+  }, [loadingList, page, total]);
+
+  const pageItems = useMemo(
+    () => buildPageItems(page, totalPages),
+    [page, totalPages],
+  );
+
+  const goToPage = (next: number) => {
+    if (loadingList) return;
+    setPage(Math.min(Math.max(1, next), totalPages));
+  };
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-5xl px-4 py-8 sm:px-6">
@@ -512,6 +588,7 @@ export default function AdminPage() {
               Upload audio to R2 (sets hosted URL)
             </span>
             <input
+              ref={fileInputRef}
               type="file"
               accept="audio/*,.mp3,.wav,.m4a,.ogg,.aac"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
@@ -520,6 +597,13 @@ export default function AdminPage() {
             {file && (
               <p className="mt-1.5 text-xs text-zinc-500">
                 Selected: {file.name} ({Math.round(file.size / 1024)} KB)
+                <button
+                  type="button"
+                  onClick={clearFile}
+                  className="ml-2 text-zinc-400 underline hover:text-white"
+                >
+                  Clear
+                </button>
               </p>
             )}
           </label>
@@ -557,9 +641,10 @@ export default function AdminPage() {
           <div className="flex flex-wrap gap-2">
             <select
               value={filterDifficulty}
-              onChange={(e) =>
-                setFilterDifficulty(e.target.value as Difficulty | "all")
-              }
+              onChange={(e) => {
+                setFilterDifficulty(e.target.value as Difficulty | "all");
+                setPage(1);
+              }}
               className="rounded-full border border-white/15 bg-black px-3 py-2 text-sm"
             >
               <option value="all">All difficulties</option>
@@ -571,9 +656,10 @@ export default function AdminPage() {
             </select>
             <select
               value={filterCatalog}
-              onChange={(e) =>
-                setFilterCatalog(e.target.value as MusicCatalog | "all")
-              }
+              onChange={(e) => {
+                setFilterCatalog(e.target.value as MusicCatalog | "all");
+                setPage(1);
+              }}
               className="rounded-full border border-white/15 bg-black px-3 py-2 text-sm"
             >
               <option value="all">All catalogs</option>
@@ -585,7 +671,10 @@ export default function AdminPage() {
             </select>
             <input
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setPage(1);
+              }}
               placeholder="Filter…"
               className="rounded-full border border-white/15 bg-black px-4 py-2 text-sm outline-none focus:border-white/35"
             />
@@ -669,6 +758,73 @@ export default function AdminPage() {
             </li>
           )}
         </ul>
+
+        {totalPages > 1 && (
+          <div className="mt-5 flex flex-col items-center gap-3 border-t border-white/10 pt-4 sm:flex-row sm:justify-between">
+            <p className="text-xs text-zinc-500">
+              {PAGE_SIZE} per page
+            </p>
+            <Pagination className="mx-0 w-auto justify-end">
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
+                    href="#"
+                    text="Prev"
+                    className={
+                      page <= 1 || loadingList
+                        ? "pointer-events-none opacity-40"
+                        : undefined
+                    }
+                    onClick={(e) => {
+                      e.preventDefault();
+                      goToPage(page - 1);
+                    }}
+                  />
+                </PaginationItem>
+                {pageItems.map((item, index) =>
+                  item === "ellipsis" ? (
+                    <PaginationItem key={`e-${index}`}>
+                      <PaginationEllipsis />
+                    </PaginationItem>
+                  ) : (
+                    <PaginationItem key={item}>
+                      <PaginationLink
+                        href="#"
+                        isActive={item === page}
+                        className={
+                          loadingList
+                            ? "pointer-events-none opacity-40"
+                            : undefined
+                        }
+                        onClick={(e) => {
+                          e.preventDefault();
+                          goToPage(item);
+                        }}
+                      >
+                        {item}
+                      </PaginationLink>
+                    </PaginationItem>
+                  ),
+                )}
+                <PaginationItem>
+                  <PaginationNext
+                    href="#"
+                    text="Next"
+                    className={
+                      page >= totalPages || loadingList
+                        ? "pointer-events-none opacity-40"
+                        : undefined
+                    }
+                    onClick={(e) => {
+                      e.preventDefault();
+                      goToPage(page + 1);
+                    }}
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          </div>
+        )}
       </section>
       </>
       )}
