@@ -132,6 +132,22 @@ export const PROGRESS_SPEED_FLOOR = 8;
 export const STAGE_OPTIONS = [0.01, 0.1, 0.5, 2, 4, 8, 15] as const;
 
 /**
+ * Some ultra-short stages are labeled shorter than they play so the clip
+ * is still hearable. Keys = stage label seconds → actual playback seconds.
+ */
+export const STAGE_PLAYBACK_SECONDS: Record<number, number> = {
+  0.01: 0.05,
+};
+
+/** Actual audio length to play for a stage (may be longer than the label). */
+export function playbackDurationForStage(stageSeconds: number): number {
+  for (const [key, play] of Object.entries(STAGE_PLAYBACK_SECONDS)) {
+    if (Math.abs(Number(key) - stageSeconds) < 0.0001) return play;
+  }
+  return stageSeconds;
+}
+
+/**
  * Run points by clip length when the song is guessed correctly.
  * Shorter hear-time = higher score.
  */

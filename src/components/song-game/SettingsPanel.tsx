@@ -55,11 +55,6 @@ export function SettingsPanel({
             accent={accent}
           />
         </div>
-        {songStart === "fromStart" && !song?.hostedUrl && (
-          <p className="mt-2 text-center text-[10px] leading-snug text-zinc-500">
-            Needs a hosted ~30s R2 clip (`hostedUrl`).
-          </p>
-        )}
         {songStart === "spotify" && !song?.previewUrl && (
           <p className="mt-2 text-center text-[10px] leading-snug text-zinc-500">
             No Spotify preview for this track.

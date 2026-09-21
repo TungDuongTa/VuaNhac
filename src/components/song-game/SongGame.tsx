@@ -9,6 +9,7 @@ import {
   PROGRESS_SPEED_FLOOR,
   RUN_META,
   nextDifficulty,
+  playbackDurationForStage,
   pointsForCorrectGuess,
   previousDifficulty,
 } from "@/src/lib/constants";
@@ -167,7 +168,7 @@ export function SongGame() {
   }, [status, answer?.id]);
 
   useEffect(() => {
-    durationRef.current = currentDuration;
+    durationRef.current = playbackDurationForStage(currentDuration);
   }, [currentDuration]);
 
   const clearStopTimer = () => {
@@ -271,6 +272,7 @@ export function SongGame() {
       setResults([]);
       setSelectedGuess(null);
       resetPlayback();
+      setStatus("loading");
 
       try {
         const params = new URLSearchParams({
@@ -428,7 +430,7 @@ export function SongGame() {
         });
       }
 
-      const target = currentDuration;
+      const target = playbackDurationForStage(currentDuration);
       durationRef.current = target;
 
       const fullyHeard = audio.currentTime >= target - 0.02;
@@ -939,26 +941,21 @@ export function SongGame() {
             )}
 
             <div className="flex w-full flex-col items-center gap-8 sm:gap-10">
-              {showingBoard && (
+              {(showingBoard || status === "loading") && (
                 <ProgressBar
                   currentDuration={currentDuration}
-                  elapsedSeconds={elapsedSeconds}
+                  elapsedSeconds={status === "loading" ? 0 : elapsedSeconds}
                   layoutDomain={layoutDomain}
                   orderedStages={orderedStages}
                   accent={meta.activeBg}
                 />
               )}
 
-              {status === "loading" && (
-                <div className="flex h-28 w-full items-center justify-center sm:h-32">
-                  <p className="text-zinc-500">Loading song...</p>
-                </div>
-              )}
-
-              {showingBoard && (
+              {(showingBoard || status === "loading") && (
                 <PlayControls
                   song={song}
                   playing={playing}
+                  loading={status === "loading"}
                   maxGuesses={maxGuesses}
                   currentDuration={currentDuration}
                   songStart={songStart}
@@ -998,13 +995,14 @@ export function SongGame() {
               )}
             </div>
 
-            {showingBoard && (
+            {(showingBoard || status === "loading") && (
               <GuessSearchBar
                 searchBarRef={searchBarRef}
                 query={query}
                 results={results}
                 selectedGuess={selectedGuess}
                 searchOpen={searchOpen}
+                isLastSkip={guessIndex >= maxGuesses - 1}
                 actionsDisabled={status !== "ready"}
                 onQueryChange={handleQueryChange}
                 onFocus={() => setSearchOpen(true)}

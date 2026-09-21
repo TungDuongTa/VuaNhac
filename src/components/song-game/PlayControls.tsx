@@ -6,6 +6,7 @@ import { formatDuration } from "./utils";
 type Props = {
   song: PublicSong | null;
   playing: boolean;
+  loading?: boolean;
   maxGuesses: number;
   currentDuration: number;
   songStart: SongStartMode;
@@ -16,6 +17,7 @@ type Props = {
 export function PlayControls({
   song,
   playing,
+  loading = false,
   maxGuesses,
   currentDuration,
   songStart,
@@ -23,6 +25,7 @@ export function PlayControls({
   onPlay,
 }: Props) {
   const disabled =
+    loading ||
     !song ||
     maxGuesses === 0 ||
     (songStart === "fromStart" ? !song.hostedUrl : !song.previewUrl);
@@ -36,14 +39,23 @@ export function PlayControls({
         type="button"
         onClick={onPlay}
         disabled={disabled}
-        className="flex h-28 w-28 items-center justify-center rounded-full text-black transition hover:scale-105 active:scale-95 disabled:opacity-40 sm:h-32 sm:w-32"
+        className="flex h-28 w-28 items-center justify-center rounded-full text-black transition hover:scale-105 active:scale-95 disabled:hover:scale-100 disabled:active:scale-100 sm:h-32 sm:w-32"
         style={{
           backgroundColor: accent,
-          boxShadow: playing ? `0 0 48px ${accent}55` : "none",
+          boxShadow: playing && !loading ? `0 0 48px ${accent}55` : "none",
+          opacity: loading ? 0.85 : disabled && !loading ? 0.4 : 1,
         }}
-        aria-label={playing ? "Pause clip" : "Play clip"}
+        aria-label={
+          loading ? "Loading song" : playing ? "Pause clip" : "Play clip"
+        }
+        aria-busy={loading}
       >
-        {playing ? (
+        {loading ? (
+          <span
+            className="h-12 w-12 animate-spin rounded-full border-[3px] border-black/25 border-t-black sm:h-14 sm:w-14"
+            aria-hidden
+          />
+        ) : playing ? (
           <span className="flex gap-2">
             <span className="h-10 w-2.5 rounded-full bg-black" />
             <span className="h-10 w-2.5 rounded-full bg-black" />
@@ -54,7 +66,7 @@ export function PlayControls({
       </button>
       <span
         className="absolute right-0 font-mono text-lg font-semibold tabular-nums sm:text-xl"
-        style={{ color: accent }}
+        style={{ color: accent, opacity: loading ? 0.45 : 1 }}
       >
         {formatDuration(currentDuration)}
       </span>

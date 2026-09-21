@@ -86,6 +86,14 @@ export function SkipIcon() {
   );
 }
 
+export function FlagIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current" aria-hidden>
+      <path d="M5 3h2v18H5V3zm3 1h10l-2.2 3.2L18 10.5H8V4z" />
+    </svg>
+  );
+}
+
 export function SearchIcon() {
   return (
     <svg

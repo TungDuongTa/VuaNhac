@@ -44,8 +44,7 @@ export default function RankingPage() {
             Run rankings
           </h1>
           <p className="mt-2 max-w-lg text-sm text-zinc-400">
-            Top 100 · sorted by points (shorter clip + harder difficulty =
-            more), then 0.1s hits, then wins.
+            Climb the top 100 — nail short clips on hard modes for big points.
           </p>
         </div>
         <Link

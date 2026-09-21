@@ -1,6 +1,6 @@
 import type { RefObject } from "react";
 import type { SearchResult } from "@/src/lib/types";
-import { SearchIcon, SkipIcon } from "./icons";
+import { FlagIcon, SearchIcon, SkipIcon } from "./icons";
 
 type Props = {
   searchBarRef: RefObject<HTMLDivElement | null>;
@@ -8,6 +8,8 @@ type Props = {
   results: SearchResult[];
   selectedGuess: SearchResult | null;
   searchOpen: boolean;
+  /** Last stage — skip becomes give up. */
+  isLastSkip?: boolean;
   actionsDisabled?: boolean;
   onQueryChange: (value: string) => void;
   onFocus: () => void;
@@ -22,6 +24,7 @@ export function GuessSearchBar({
   results,
   selectedGuess,
   searchOpen,
+  isLastSkip = false,
   actionsDisabled = false,
   onQueryChange,
   onFocus,
@@ -94,10 +97,10 @@ export function GuessSearchBar({
           type="button"
           disabled={actionsDisabled}
           onClick={onSkip}
-          className="flex min-w-[6.5rem] items-center justify-center gap-1.5 rounded-full border border-white/25 bg-[#141414] px-7 text-sm font-medium text-white hover:border-white/40 disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex min-w-[6.5rem] items-center justify-center gap-1.5 rounded-full border border-white/25 bg-[#141414] px-5 text-sm font-medium text-white hover:border-white/40 disabled:cursor-not-allowed disabled:opacity-40 sm:px-7"
         >
-          <SkipIcon />
-          Skip
+          {isLastSkip ? <FlagIcon /> : <SkipIcon />}
+          {isLastSkip ? "Give up" : "Skip"}
         </button>
       )}
     </div>
