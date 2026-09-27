@@ -33,6 +33,7 @@ type AdminSong = {
   hostedUrl: string | null;
   createdAt: string;
   updatedAt: string;
+  duplicateCount?: number;
 };
 
 type SongForm = {
@@ -112,6 +113,7 @@ export default function AdminPage() {
     "all",
   );
   const [query, setQuery] = useState("");
+  const [duplicatesOnly, setDuplicatesOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
@@ -182,6 +184,7 @@ export default function AdminPage() {
         params.set("difficulty", filterDifficulty);
       if (filterCatalog !== "all") params.set("catalog", filterCatalog);
       if (query.trim()) params.set("q", query.trim());
+      if (duplicatesOnly) params.set("duplicates", "1");
       params.set("page", String(page));
       params.set("pageSize", String(PAGE_SIZE));
       const res = await fetch(`/api/admin/songs?${params}`, {
@@ -209,7 +212,7 @@ export default function AdminPage() {
     } finally {
       setLoadingList(false);
     }
-  }, [filterDifficulty, filterCatalog, query, page, secret, verified]);
+  }, [filterDifficulty, filterCatalog, query, duplicatesOnly, page, secret, verified]);
 
   useEffect(() => {
     void loadSongs();
@@ -669,6 +672,21 @@ export default function AdminPage() {
                 </option>
               ))}
             </select>
+            <button
+              type="button"
+              aria-pressed={duplicatesOnly}
+              onClick={() => {
+                setDuplicatesOnly((on) => !on);
+                setPage(1);
+              }}
+              className={`rounded-full border px-4 py-2 text-sm ${
+                duplicatesOnly
+                  ? "border-amber-400/70 bg-amber-400 text-black"
+                  : "border-white/15 hover:border-white/30"
+              }`}
+            >
+              Same titles
+            </button>
             <input
               value={query}
               onChange={(e) => {
@@ -710,6 +728,11 @@ export default function AdminPage() {
                 <div className="min-w-0">
                   <p className="truncate font-medium text-white">
                     {song.title}
+                    {song.duplicateCount != null && song.duplicateCount > 1 && (
+                      <span className="ml-2 rounded-full bg-amber-400/15 px-2 py-0.5 text-[11px] font-semibold text-amber-300">
+                        ×{song.duplicateCount}
+                      </span>
+                    )}
                   </p>
                   <p className="truncate text-sm text-zinc-400">
                     {song.artist}
@@ -754,7 +777,9 @@ export default function AdminPage() {
           ))}
           {!loadingList && songs.length === 0 && (
             <li className="py-10 text-center text-sm text-zinc-500">
-              No songs yet. Add one above.
+              {duplicatesOnly
+                ? "No titles appear more than once."
+                : "No songs yet. Add one above."}
             </li>
           )}
         </ul>

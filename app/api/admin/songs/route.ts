@@ -25,6 +25,7 @@ export async function GET(request: Request) {
   const difficultyParam = searchParams.get("difficulty");
   const catalogParam = searchParams.get("catalog");
   const q = searchParams.get("q") ?? undefined;
+  const duplicates = searchParams.get("duplicates") === "1";
   const page = Math.max(1, Number(searchParams.get("page") ?? "1") || 1);
   const pageSize = Math.min(
     100,
@@ -41,6 +42,7 @@ export async function GET(request: Request) {
     difficulty,
     catalog,
     q,
+    duplicates,
     page,
     pageSize,
   });

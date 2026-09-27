@@ -111,6 +111,30 @@ export function SettingsPanel({
           aria-label="Volume"
         />
       </section>
+
+      <section className="w-full">
+        <h2 className="mb-3 text-center text-[11px] font-semibold tracking-[0.18em] text-white">
+          OTHER SITE
+        </h2>
+        <div className="flex flex-col gap-2">
+          <a
+            href="https://www.vuatruyen.cc/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full rounded-full border border-white/15 bg-[#1c1c1c] py-2.5 text-center text-sm font-semibold text-zinc-200 transition hover:border-white/30 hover:text-white"
+          >
+            VuaTruyen
+          </a>
+          <a
+            href="https://vuaphim.vercel.app/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full rounded-full border border-white/15 bg-[#1c1c1c] py-2.5 text-center text-sm font-semibold text-zinc-200 transition hover:border-white/30 hover:text-white"
+          >
+            VuaPhim
+          </a>
+        </div>
+      </section>
     </div>
   );
 }

@@ -13,6 +13,8 @@ export type AdminSong = Song & {
   id: string;
   createdAt: string;
   updatedAt: string;
+  /** How many library rows share this normalized title (set by the duplicate filter). */
+  duplicateCount?: number;
 };
 
 const COLLECTION = "songs";
@@ -181,6 +183,8 @@ export async function listAdminSongs(filters?: {
   difficulty?: Difficulty;
   catalog?: MusicCatalog;
   q?: string;
+  /** Keep only titles that appear more than once (accent-insensitive). */
+  duplicates?: boolean;
   page?: number;
   pageSize?: number;
 }): Promise<{
@@ -215,12 +219,37 @@ export async function listAdminSongs(filters?: {
     });
   }
 
+  const titleCounts = new Map<string, number>();
+  if (filters?.duplicates) {
+    for (const doc of docs) {
+      const key = normalizeVietnamese(doc.title);
+      titleCounts.set(key, (titleCounts.get(key) ?? 0) + 1);
+    }
+    docs = docs.filter(
+      (doc) => (titleCounts.get(normalizeVietnamese(doc.title)) ?? 0) > 1,
+    );
+    docs.sort((a, b) => {
+      const byTitle = normalizeVietnamese(a.title).localeCompare(
+        normalizeVietnamese(b.title),
+      );
+      if (byTitle !== 0) return byTitle;
+      return b.updatedAt.getTime() - a.updatedAt.getTime();
+    });
+  }
+
   const total = docs.length;
   const pageSize = Math.min(Math.max(filters?.pageSize ?? 30, 1), 100);
   const totalPages = Math.max(1, Math.ceil(total / pageSize) || 1);
   const page = Math.min(Math.max(filters?.page ?? 1, 1), totalPages);
   const start = (page - 1) * pageSize;
-  const songs = docs.slice(start, start + pageSize).map(toAdminSong);
+  const songs = docs.slice(start, start + pageSize).map((doc) => {
+    const song = toAdminSong(doc);
+    if (!filters?.duplicates) return song;
+    return {
+      ...song,
+      duplicateCount: titleCounts.get(normalizeVietnamese(doc.title)) ?? 1,
+    };
+  });
 
   return { songs, total, page, pageSize, totalPages };
 }
