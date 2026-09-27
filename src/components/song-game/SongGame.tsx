@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import {
@@ -57,7 +57,6 @@ export function SongGame() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [songStart, setSongStart] = useState<SongStartMode>("fromStart");
   const [stages, setStages] = useState<number[]>([...GUESS_DURATIONS]);
   const [volume, setVolume] = useState(0.35);
@@ -80,6 +79,11 @@ export function SongGame() {
   const playRafRef = useRef<number | null>(null);
   const durationRef = useRef(0.1);
   const offsetRef = useRef(0);
+  const progressFillRef = useRef<HTMLDivElement | null>(null);
+  const elapsedRef = useRef(0);
+  const playStartedAtRef = useRef(0);
+  const layoutDomainRef = useRef(PROGRESS_SPEED_FLOOR);
+  const stageLabelRef = useRef(0.1);
   const panelRef = useRef<HTMLElement | null>(null);
   const revealRef = useRef<HTMLDivElement | null>(null);
   const confettiCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -102,6 +106,7 @@ export function SongGame() {
   const meta = DIFFICULTY_META[difficulty];
   runActiveRef.current = runActive;
   difficultyRef.current = difficulty;
+  stageLabelRef.current = currentDuration;
 
   useEffect(() => {
     setPlayerName(readPlayerName());
@@ -123,6 +128,31 @@ export function SongGame() {
 
   const [layoutDomain, setLayoutDomain] = useState(PROGRESS_SPEED_FLOOR);
   const layoutDomainProxy = useRef({ value: PROGRESS_SPEED_FLOOR });
+  layoutDomainRef.current = layoutDomain;
+
+  const paintFill = useCallback((seconds: number) => {
+    const capped = Math.max(0, seconds);
+    elapsedRef.current = capped;
+    const fill = progressFillRef.current;
+    if (!fill) return;
+    const domain = Math.max(layoutDomainRef.current, 0.001);
+    const visual = Math.min(capped, stageLabelRef.current);
+    fill.style.width = `${Math.min(100, (visual / domain) * 100)}%`;
+  }, []);
+
+  const captureElapsed = useCallback(() => {
+    if (playRafRef.current === null) return elapsedRef.current;
+    const seconds = Math.min(
+      Math.max(0, (performance.now() - playStartedAtRef.current) / 1000),
+      durationRef.current,
+    );
+    elapsedRef.current = seconds;
+    return seconds;
+  }, []);
+
+  useLayoutEffect(() => {
+    paintFill(elapsedRef.current);
+  });
 
   const targetLayoutDomain = useMemo(() => {
     if (status === "won" || status === "lost") {
@@ -186,12 +216,19 @@ export function SongGame() {
   };
 
   const pauseAudio = useCallback(() => {
+    if (playRafRef.current !== null) {
+      const seconds = Math.min(
+        Math.max(0, (performance.now() - playStartedAtRef.current) / 1000),
+        durationRef.current,
+      );
+      paintFill(seconds);
+    }
     clearStopTimer();
     clearPlayRaf();
     const audio = audioRef.current;
     if (audio) audio.pause();
     setPlaying(false);
-  }, []);
+  }, [paintFill]);
 
   const resetPlayback = useCallback(() => {
     clearStopTimer();
@@ -206,43 +243,48 @@ export function SongGame() {
       }
     }
     setPlaying(false);
-    setElapsedSeconds(0);
-  }, []);
+    elapsedRef.current = 0;
+    playStartedAtRef.current = 0;
+    paintFill(0);
+  }, [paintFill]);
 
-  const startProgressTracking = useCallback((audio: HTMLAudioElement) => {
+  const startProgressTracking = useCallback(() => {
+    if (playRafRef.current !== null) {
+      elapsedRef.current = Math.min(
+        Math.max(0, (performance.now() - playStartedAtRef.current) / 1000),
+        durationRef.current,
+      );
+    }
     clearPlayRaf();
+    playStartedAtRef.current = performance.now() - elapsedRef.current * 1000;
     const tick = () => {
-      const relative = Math.max(0, audio.currentTime - offsetRef.current);
-      const t = Math.min(relative, durationRef.current);
-      setElapsedSeconds(t);
-      if (!audio.paused && relative < durationRef.current - 0.001) {
+      const seconds = Math.min(
+        Math.max(0, (performance.now() - playStartedAtRef.current) / 1000),
+        durationRef.current,
+      );
+      paintFill(seconds);
+      if (seconds < durationRef.current - 0.001) {
         playRafRef.current = requestAnimationFrame(tick);
+      } else {
+        playRafRef.current = null;
       }
     };
     playRafRef.current = requestAnimationFrame(tick);
-  }, []);
+  }, [paintFill]);
 
   const scheduleStopAtDuration = useCallback(
     (audio: HTMLAudioElement, targetSeconds: number) => {
       clearStopTimer();
-      const absoluteStop = offsetRef.current + targetSeconds;
-      const remainingMs = Math.max(
-        0,
-        (absoluteStop - audio.currentTime) * 1000,
-      );
+      const elapsed = captureElapsed();
+      const remainingMs = Math.max(0, (targetSeconds - elapsed) * 1000);
       stopTimerRef.current = setTimeout(() => {
         audio.pause();
-        try {
-          audio.currentTime = absoluteStop;
-        } catch {
-          // ignore
-        }
         clearPlayRaf();
-        setElapsedSeconds(targetSeconds);
+        paintFill(targetSeconds);
         setPlaying(false);
       }, remainingMs);
     },
-    [],
+    [captureElapsed, paintFill],
   );
 
   useEffect(() => {
@@ -398,12 +440,6 @@ export function SongGame() {
 
     if (playing) {
       pauseAudio();
-      try {
-        const relative = Math.max(0, audio.currentTime - offsetRef.current);
-        setElapsedSeconds(Math.min(relative, durationRef.current));
-      } catch {
-        // ignore
-      }
       return;
     }
 
@@ -433,15 +469,21 @@ export function SongGame() {
       const target = playbackDurationForStage(currentDuration);
       durationRef.current = target;
 
-      const fullyHeard = audio.currentTime >= target - 0.02;
+      const fullyHeard = elapsedRef.current >= target - 0.02;
       if (fullyHeard || audio.currentTime < 0) {
-        audio.currentTime = 0;
-        setElapsedSeconds(0);
+        elapsedRef.current = 0;
+        playStartedAtRef.current = 0;
+        paintFill(0);
+        try {
+          audio.currentTime = 0;
+        } catch {
+          // ignore
+        }
       }
 
       await audio.play();
       setPlaying(true);
-      startProgressTracking(audio);
+      startProgressTracking();
       scheduleStopAtDuration(audio, target);
     } catch {
       setMessage(
@@ -508,12 +550,14 @@ export function SongGame() {
             : 30;
         durationRef.current = full;
         audio.currentTime = 0;
-        setElapsedSeconds(0);
+        elapsedRef.current = 0;
+        playStartedAtRef.current = 0;
+        paintFill(0);
 
         const onEnded = () => {
           clearPlayRaf();
           setPlaying(false);
-          setElapsedSeconds(durationRef.current);
+          paintFill(durationRef.current);
         };
         audio.addEventListener("ended", onEnded, { once: true });
 
@@ -523,7 +567,7 @@ export function SongGame() {
           return;
         }
         setPlaying(true);
-        startProgressTracking(audio);
+        startProgressTracking();
       } catch {
         if (!cancelled) setPlaying(false);
       }
@@ -718,14 +762,15 @@ export function SongGame() {
 
     const nextIndex = guessIndex + 1;
     const nextDuration = orderedStages[nextIndex]!;
+    const nextPlay = playbackDurationForStage(nextDuration);
     setGuessIndex(nextIndex);
-    durationRef.current = nextDuration;
+    durationRef.current = nextPlay;
 
     const audio = audioRef.current;
     if (audio && playing) {
       clearStopTimer();
-      startProgressTracking(audio);
-      scheduleStopAtDuration(audio, nextDuration);
+      startProgressTracking();
+      scheduleStopAtDuration(audio, nextPlay);
     }
   };
 
@@ -944,7 +989,7 @@ export function SongGame() {
               {(showingBoard || status === "loading") && (
                 <ProgressBar
                   currentDuration={currentDuration}
-                  elapsedSeconds={status === "loading" ? 0 : elapsedSeconds}
+                  fillRef={progressFillRef}
                   layoutDomain={layoutDomain}
                   orderedStages={orderedStages}
                   accent={meta.activeBg}

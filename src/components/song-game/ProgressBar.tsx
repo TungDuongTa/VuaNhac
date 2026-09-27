@@ -1,8 +1,9 @@
+import type { RefObject } from "react";
 import { formatDuration } from "./utils";
 
 type Props = {
   currentDuration: number;
-  elapsedSeconds: number;
+  fillRef: RefObject<HTMLDivElement | null>;
   layoutDomain: number;
   orderedStages: number[];
   accent: string;
@@ -10,13 +11,12 @@ type Props = {
 
 export function ProgressBar({
   currentDuration,
-  elapsedSeconds,
+  fillRef,
   layoutDomain,
   orderedStages,
   accent,
 }: Props) {
   const unlockedTime = currentDuration;
-  const elapsed = Math.min(elapsedSeconds, unlockedTime);
 
   return (
     <div className="w-full">
@@ -30,11 +30,9 @@ export function ProgressBar({
           }}
         />
         <div
+          ref={fillRef}
           className="absolute inset-y-0 left-0"
-          style={{
-            width: `${Math.min(100, (elapsed / layoutDomain) * 100)}%`,
-            backgroundColor: accent,
-          }}
+          style={{ backgroundColor: accent }}
         />
         {orderedStages.map((stage) => {
           if (stage >= layoutDomain - 0.0001) return null;
